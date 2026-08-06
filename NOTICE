@@ -1,0 +1,42 @@
+Framesleuth
+Copyright 2026 Santosh Shinde
+
+This product includes software developed as part of the Framesleuth project.
+
+Licensed under the Apache License, Version 2.0. See LICENSE for the full terms.
+
+--------------------------------------------------------------------------------
+Third-party components
+--------------------------------------------------------------------------------
+
+Framesleuth depends on, but does not vendor, the packages declared in
+pyproject.toml. Each is installed from PyPI under its own license and retains
+its own copyright. The ones worth calling out because they carry native code or
+non-permissive terms:
+
+  PyAV (av)            BSD-3-Clause. Ships prebuilt wheels that BUNDLE FFmpeg
+                       binaries. FFmpeg is LGPL-2.1-or-later (and GPL if a
+                       build enables GPL components). This is why Framesleuth
+                       needs no system ffmpeg — and it means anyone
+                       REDISTRIBUTING a Framesleuth bundle, container image, or
+                       frozen binary is redistributing FFmpeg too, and must
+                       satisfy the LGPL themselves. Running the agent locally
+                       from source, which is the normal path, does not trigger
+                       that obligation.
+
+  opencv-python        Apache-2.0. Wheels bundle OpenCV, which includes
+                       third-party components under BSD and other permissive
+                       terms; see the LICENSE-3RD-PARTY file in the installed
+                       distribution.
+
+  faster-whisper       MIT. Runs CTranslate2 (MIT). Model weights are NOT
+                       covered by this notice — whichever Whisper model you
+                       download carries its own license.
+
+  FastAPI, Starlette,  MIT / BSD-3-Clause.
+  Pydantic, uvicorn,
+  aiohttp, aiosqlite,
+  mcp
+
+Model weights are never distributed with Framesleuth. The vision and coder
+models you point it at are obtained and licensed by you.

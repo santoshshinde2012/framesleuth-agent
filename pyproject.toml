@@ -8,9 +8,23 @@ dynamic = ["version"]
 description = "Local bug-reproduction video analysis exposed over MCP (VS Code and any MCP client)"
 readme = "README.md"
 requires-python = ">=3.11"
-license = {text = "Apache-2.0"}
+# PEP 639: an SPDX expression plus the file itself, so `LICENSE` is actually
+# carried into the wheel/sdist. The old `{text = "Apache-2.0"}` form only
+# asserted a license in metadata — it shipped no license text, which is exactly
+# what Apache-2.0 section 4(a) requires a redistributor to include.
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [
     {name = "Framesleuth Contributors"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Video",
+    "Topic :: Software Development :: Bug Tracking",
+    "Typing :: Typed",
 ]
 
 dependencies = [
