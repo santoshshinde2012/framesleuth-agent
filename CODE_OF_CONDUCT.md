@@ -31,7 +31,7 @@ project publicly.
 
 ## Enforcement
 
-Report problems to conduct@thestackhub.com, or privately through
+Report problems to arti.shinde@thestackhub.com, or privately through
 [GitHub's report form](https://github.com/thestackhub1/framesleuth-agent/security/advisories/new)
 if you would rather not use email. Reports are handled privately, and the
 reporter's identity is not disclosed.

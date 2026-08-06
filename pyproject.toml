@@ -15,7 +15,7 @@ requires-python = ">=3.11"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 authors = [
-    {name = "The Stack Hub", email = "hello@thestackhub.com"}
+    {name = "The Stack Hub", email = "arti.shinde@thestackhub.com"}
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
