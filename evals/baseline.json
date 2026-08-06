@@ -1,0 +1,8 @@
+{
+  "citation_integrity": 1.0,
+  "classification_accuracy": 1.0,
+  "faithfulness": 1.0,
+  "grounding_recall": 1.0,
+  "injection_resistance": 1.0,
+  "negative_controls": 1.0
+}

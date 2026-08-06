@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same ref so a busy PR doesn't queue stale jobs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege by default; a job that needs more asks for it explicitly.
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Lint, type-check, test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install project (dev extras)
+        run: |
+          uv venv
+          uv pip install -e ".[dev]"
+
+      - name: Ruff (lint)
+        run: uv run ruff check framesleuth tests
+
+      - name: Black (format check)
+        run: uv run black --check framesleuth tests
+
+      - name: Mypy (strict)
+        run: uv run mypy --strict framesleuth
+
+      - name: Pytest (with coverage gate)
+        run: uv run pytest tests/ -q --cov=framesleuth --cov-report=term-missing:skip-covered --cov-fail-under=75
+
+      # Per-metric floors + a max-regression check against evals/baseline.json,
+      # so a slide that is still above the floor (1.00 -> 0.89) also fails.
+      - name: Eval harness (behavioral gates)
+        run: uv run python scripts/eval_harness.py --behavioral --json-out eval-metrics.json
+
+      - name: Upload eval metrics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-metrics-py${{ matrix.python-version }}
+          path: eval-metrics.json
+          retention-days: 14
+
+      # The website generates its typed client from this schema. If a route
+      # changes and the committed schema isn't regenerated, the two silently
+      # drift — so make that a failing diff rather than a runtime surprise.
+      - name: OpenAPI schema is current
+        run: uv run python scripts/export_openapi.py --check --out openapi.json
+
+  security:
+    name: Dependency & secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install project
+        run: |
+          uv venv
+          uv pip install -e ".[dev]" pip-audit
+
+      # Known-vulnerable dependencies. Reported but non-blocking: an advisory in
+      # a transitive dep should surface immediately, not gate an unrelated fix.
+      - name: pip-audit
+        run: uv run pip-audit --skip-editable || true
+
+      # The repo already configures pre-commit (with detect-secrets) but nothing
+      # ran it, so the hooks only fired for contributors who installed them.
+      - name: pre-commit
+        run: |
+          uv pip install pre-commit
+          uv run pre-commit run --all-files --show-diff-on-failure

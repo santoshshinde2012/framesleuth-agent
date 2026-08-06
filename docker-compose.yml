@@ -1,0 +1,72 @@
+# Framesleuth backend-only Docker Compose stack.
+#
+#   docker compose up        # also loads docker-compose.override.yml when present
+#   curl http://127.0.0.1:8010/v1/healthz
+#
+# This base file contains only the Framesleuth API and shared backend data. The
+# default override file adds the optional Ollama server, model-pull init job, and
+# Ollama model volume for the one-command local stack.
+#
+# To run only the backend against a native/external model server:
+#
+#   docker compose -f docker-compose.yml up
+#
+# By default, backend-only mode reaches native Ollama on the host at
+# http://host.docker.internal:11434. Override VLM_URL/CODER_URL as needed.
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: framesleuth-backend:latest
+    pull_policy: build # locally built; don't try to pull from a registry
+    container_name: framesleuth-backend
+    ports:
+      # LOOPBACK ONLY. A bare "8010:8000" binds 0.0.0.0 on the host, which put
+      # this API — and every recording it has analyzed — on the whole LAN. The
+      # agent is designed to be reached by your own browser/editor, not by peers.
+      - "127.0.0.1:8010:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # Picks up API_TOKEN and any other overrides from a local .env. Without this
+    # there was no supported way to enable auth on a Compose deployment at all.
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - BACKEND_HOST=0.0.0.0
+      - LOG_LEVEL=INFO
+      # Auth. Loopback publishing is the primary boundary, but CORS deliberately
+      # allows the hosted site + Private Network Access, so a token is what stops
+      # an unrelated page (or another local process) from driving your agent.
+      # Generate one with: openssl rand -hex 32
+      - API_TOKEN=${API_TOKEN:-}
+      # Backend-only mode expects a model server outside Compose.
+      - VLM_URL=${VLM_URL:-http://host.docker.internal:11434}
+      - VLM_MODEL=${VLM_MODEL:-qwen2.5vl}
+      - CODER_URL=${CODER_URL:-http://host.docker.internal:11434}
+      - CODER_MODEL=${CODER_MODEL:-qwen2.5-coder:7b}
+    volumes:
+      - ./bug-reports:/app/bug-reports # analysis output persists on the host
+      # Matches the non-root user in the Dockerfile (uid 10001, home
+      # /home/framesleuth) — a /root/.cache mount would be unwritable now.
+      - hf_cache:/home/framesleuth/.cache/huggingface # faster-whisper model cache
+    # This container decodes attacker-supplied media and (with the render extra)
+    # runs headless Chromium on attacker-supplied HTML, so it gets no privileges
+    # it does not need and cannot exhaust the host.
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 512
+    deploy:
+      resources:
+        limits:
+          # Sized for MAX_CONCURRENT_JOBS=2 video decodes plus a Chromium render.
+          memory: 6G
+    restart: unless-stopped
+
+volumes:
+  hf_cache:
+    driver: local
