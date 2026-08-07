@@ -37,7 +37,7 @@ def test_nested_sidecar_secrets_are_redacted() -> None:
     }
     scrubbed, redactions = redact_obj(event, timestamp=1.0)
 
-    assert "abcdef1234567890ABCDEF" not in str(scrubbed)
+    assert "abcdef1234567890ABCDEF" not in str(scrubbed)  # pragma: allowlist secret
     assert "supersecretvalue123" not in str(scrubbed)
     assert "4111" not in str(scrubbed)
     assert "hunter2" not in str(scrubbed)
@@ -93,7 +93,11 @@ def test_user_intent_is_redacted_before_use() -> None:
 
 def test_private_key_material_is_removed_not_just_its_header() -> None:
     """Stripping only the BEGIN line left the key body while claiming success."""
-    pem = "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAxyz123\n-----END RSA PRIVATE KEY-----"
+    pem = (
+        "-----BEGIN RSA PRIVATE KEY-----\n"  # pragma: allowlist secret
+        "MIIEowIBAAKCAQEAxyz123\n"
+        "-----END RSA PRIVATE KEY-----"
+    )
     out, redactions = redact_text(pem)
     assert "MIIEowIBAAKCAQEA" not in out
     assert any(r.region == "private_key_block" for r in redactions)
@@ -102,11 +106,11 @@ def test_private_key_material_is_removed_not_just_its_header() -> None:
 def test_modern_provider_tokens_are_redacted() -> None:
     """The old `(sk|rk|pk)_` rule missed every non-Stripe provider format."""
     for secret in (
-        "ghp_16C7e42F292c6912E7710c838347Ae178B4a",
+        "ghp_16C7e42F292c6912E7710c838347Ae178B4a",  # pragma: allowlist secret
         "sk-ant-api03-abcdefghijklmnopqrst",
-        "glpat-ABCdefGHIjklMNOpqrST",
+        "glpat-ABCdefGHIjklMNOpqrST",  # pragma: allowlist secret
         "xoxb-2334-4567-abcdefghij",
-        "AIzaSyD-1234567890abcdefghijklmnop",
+        "AIzaSyD-1234567890abcdefghijklmnop",  # pragma: allowlist secret
     ):
         out, _ = redact_text(f"token is {secret}")
         assert secret not in out, f"{secret} survived redaction"

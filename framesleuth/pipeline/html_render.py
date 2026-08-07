@@ -217,6 +217,10 @@ def render_availability() -> dict[str, Any]:
     one the render extra was installed into, or that it wasn't restarted — this
     makes that visible (``playwright``/``chromium``/``ffmpeg`` flags + the exact
     ``python`` running) instead of failing opaquely only at render time.
+
+    NB: ``/v1/healthz`` is public, so it strips ``python`` and ``hint`` from this
+    dict before responding; the full diagnostics are served by the token-gated
+    ``/v1/version``.
     """
     info: dict[str, Any] = {
         "playwright": False,
@@ -517,8 +521,17 @@ async def _render_realtime(html: str, opts: RenderOptions, out_dir: Path) -> Pat
         out = out_dir / "render.mp4"
         await _run_ffmpeg(
             [
-                ffmpeg, "-y", "-i", str(webm),
-                "-movflags", "+faststart", "-pix_fmt", "yuv420p", "-c:v", "libx264", str(out),
+                ffmpeg,
+                "-y",
+                "-i",
+                str(webm),
+                "-movflags",
+                "+faststart",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:v",
+                "libx264",
+                str(out),
             ]  # fmt: skip
         )
         return out

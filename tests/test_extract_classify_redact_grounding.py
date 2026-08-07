@@ -323,7 +323,10 @@ def test_grounding_never_follows_symlinks_out_of_workspace(tmp_path: Path) -> No
 
     outside = tmp_path / "outside"
     outside.mkdir()
-    (outside / "secret.py").write_text("API_SECRET = 'topsecret_marker'\n", encoding="utf-8")
+    (outside / "secret.py").write_text(
+        "API_SECRET = 'topsecret_marker'\n",  # pragma: allowlist secret
+        encoding="utf-8",
+    )
 
     # A symlink inside the repo pointing at the outside directory.
     try:

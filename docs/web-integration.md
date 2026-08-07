@@ -10,15 +10,18 @@ to Claude.
 
 > **Local-first & private.** Framesleuth binds loopback (`127.0.0.1`) — it is **not**
 > meant to be exposed on a network or the public internet. Its CORS allowlist is an
-> explicit set of origins (`WEB_ORIGINS`, default: the hosted demo site + local dev)
-> plus `chrome-extension://`, and it answers Chrome's Private Network Access preflight,
-> so a page on an allowed origin running **in your browser, on your machine** can call
-> the loopback API directly. This is what lets the "Try it" widget on framesleuth.com
-> drive your locally-running agent with zero setup — it never makes the agent reachable
-> off your machine.
+> explicit set of origins: local dev (`http://localhost:3000`, `http://127.0.0.1:3000`)
+> and `chrome-extension://` IDs you configure, plus anything you add to `WEB_ORIGINS` —
+> which is **empty by default, so no remote site is trusted out of the box**. It answers
+> Chrome's Private Network Access preflight, so a page on an allowed origin running
+> **in your browser, on your machine** can call the loopback API directly.
+>
+> To let the hosted "Try it" widget on framesleuth.com drive your locally-running agent,
+> opt in deliberately: `WEB_ORIGINS=https://framesleuth.com,https://www.framesleuth.com`.
+> Allowlisting an origin never makes the agent reachable off your machine.
 >
 > For your **own production web app**, prefer the proxy pattern below (browser → your
-> server → Framesleuth) and narrow `WEB_ORIGINS` to just your origins, so you keep the
+> server → Framesleuth) and set `WEB_ORIGINS` to just your origins, so you keep the
 > analysis on a machine you control and add your own auth.
 
 ---
@@ -349,12 +352,16 @@ orchestrates and renders.
 - **Keep Framesleuth on loopback.** It binds `127.0.0.1` and is not meant to be exposed on
   a network or the internet. The CORS allowlist (`WEB_ORIGINS`) only controls which
   browser origins may *read* responses from the local API — it does **not** make the agent
-  network-reachable. For a production web app, narrow `WEB_ORIGINS` to your own origins (or
-  set it empty) and proxy through your backend instead.
+  network-reachable. `WEB_ORIGINS` starts empty, but `http://localhost:3000` and
+  `http://127.0.0.1:3000` are trusted by default so a fresh checkout's `npm run dev`
+  works with no configuration. On a deployment that serves no local dev server, set
+  `ALLOW_LOCAL_DEV_ORIGINS=false` — that is what makes the allowlist genuinely empty.
+  For a production web app, either keep it empty and proxy through your backend, or
+  list your own origins only.
 - **Set `API_TOKEN` on the agent.** When set, every `/v1` endpoint except `/v1/healthz`
   requires `Authorization: Bearer <token>`. This matters here specifically because CORS
-  deliberately allows a *public* HTTPS origin plus Chrome's Private Network Access
-  preflight: CORS governs what a *browser* may read, not what another local process — or
+  can be configured to allow a *public* HTTPS origin, plus Chrome's Private Network
+  Access preflight: CORS governs what a *browser* may read, not what another local process — or
   a DNS-rebinding page — may send to loopback. A token is the control that does.
 - **Put auth on *your* layer too** (the browser→backend hop), for anything beyond a
   single-user machine.

@@ -48,7 +48,7 @@ def test_ssn_and_phone_redacted() -> None:
 
 
 def test_aws_access_key_redacted() -> None:
-    assert "aws_access_key" in _regions("key AKIAIOSFODNN7EXAMPLE here")
+    assert "aws_access_key" in _regions("key AKIAIOSFODNN7EXAMPLE here")  # pragma: allowlist secret
 
 
 def test_pii_can_be_disabled() -> None:

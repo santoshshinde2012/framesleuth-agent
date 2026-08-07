@@ -101,6 +101,29 @@ class TestCoderClient:
         assert text == "ok"
         assert calls["n"] == 2
 
+    @pytest.mark.asyncio
+    async def test_missing_model_is_not_reported_as_unreachable(
+        self, coder_client: CoderClient
+    ) -> None:
+        """A 404 from a reachable server names the model, not the connection."""
+        from framesleuth.errors import ModelNotLoadedError
+
+        class _MissingModelResp:
+            status = 404
+
+            async def text(self) -> str:
+                return '{"error":"model \'qwen2.5-coder:7b\' not found"}'
+
+        session = AsyncMock()
+        session.post = lambda url, json: _MissingModelResp()
+        session.closed = False
+        with patch.object(coder_client, "_get_session", new_callable=AsyncMock) as mock_get:
+            mock_get.return_value = session
+            with pytest.raises(ModelNotLoadedError) as excinfo:
+                await coder_client.complete("system", "user")
+        assert "qwen2.5-coder:7b" in excinfo.value.message
+        assert "not reachable" not in excinfo.value.message
+
 
 def test_content_to_text_shapes() -> None:
     """All spec-legal content shapes coerce to text."""

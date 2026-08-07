@@ -123,7 +123,9 @@ curl -s http://127.0.0.1:8010/v1/healthz | python -m json.tool   # status: healt
 ```
 
 When `/v1/healthz` shows `vlm: ready`, recordings analyze with a real
-classification (`analysis_quality.level` = `full`/`partial`). With no vision model
+classification (`analysis_quality.level` = `full`/`partial`). `ready` means the
+server answered *and* lists your `VLM_MODEL`; if the model has not been pulled you
+get `vlm: degraded` with `model '<name>' not loaded` instead. With no vision model
 reachable, Framesleuth **degrades gracefully** — it still produces a valid Context
 Bundle from the browser sidecars (console errors, failed requests, clicks)
 and records what was thin in `analysis_quality`. Record **with narration** so the
@@ -250,11 +252,22 @@ Set `FRAMESLEUTH_AUTO_INSTALL_BROWSER=0` to disable the auto-download and run
 > absent — the VLM still does OCR; the backstop only adds a second reading. Use
 > `".[all]"` for dev + render + ocr.
 
-If `render.ready` is `false`, the `render.hint` field tells you exactly what's
-missing. The most common cause of *"Playwright is not installed"* despite
-following the steps is that `framesleuth-api` is running from a **different
-environment** than the one you installed into (the `render.python` field shows
-which interpreter the server uses) — or the server simply wasn't restarted.
+If `render.ready` is `false`, ask **`/v1/version`** for the details — `/v1/healthz`
+is public, so it deliberately omits the `hint` and `python` fields rather than
+publish the server's filesystem layout to an unauthenticated caller:
+
+```bash
+curl -s http://127.0.0.1:8010/v1/version | python -m json.tool
+# → "render": {"ready": false, "hint": "...", "python": "/path/to/the/interpreter", ...}
+# With API_TOKEN set, this endpoint is token-gated:
+#   curl -s -H "Authorization: Bearer $API_TOKEN" http://127.0.0.1:8010/v1/version
+```
+
+`render.hint` tells you exactly what's missing. The most common cause of
+*"Playwright is not installed"* despite following the steps is that
+`framesleuth-api` is running from a **different environment** than the one you
+installed into (`render.python` shows which interpreter the server uses) — or the
+server simply wasn't restarted.
 
 ## Project structure
 
@@ -339,12 +352,20 @@ Apache-2.0
 Bug capture lives outside this repo. Any screen recording works — drive the agent directly
 with your own video file. A browser capture extension can also record a session, collect
 browser sidecars (console errors, failed requests, clicks), and post the video + sidecars
-to this agent's local API. CORS is allowlisted (`WEB_ORIGINS`, default: the hosted demo site
-+ local dev) plus any `chrome-extension://` origins you list in `CHROME_EXTENSION_IDS`
-(empty by default — a capture extension must add its own ID), and the agent answers
-Chrome's Private Network Access preflight — so both a capture extension and the "Try it" widget on
-framesleuth.com work against a locally running backend with no extra setup. The agent stays
-bound to loopback; CORS only controls which browser origins may *read* its responses.
+to this agent's local API. CORS is an exact allowlist: local dev origins
+(`http://localhost:3000`, `http://127.0.0.1:3000`) always, plus any `chrome-extension://`
+origins you list in `CHROME_EXTENSION_IDS` (empty by default — a capture extension must add
+its own ID), plus whatever you put in `WEB_ORIGINS` (**empty by default — no remote site is
+trusted, including framesleuth.com**). The agent answers Chrome's Private Network Access
+preflight, so an allowed origin can drive a locally running backend. To let the hosted
+"Try it" widget talk to your agent, opt in explicitly:
+
+```bash
+WEB_ORIGINS=https://framesleuth.com,https://www.framesleuth.com
+```
+
+The agent stays bound to loopback; CORS only controls which browser origins may *read*
+its responses.
 
 **Set `API_TOKEN` for anything beyond a single-user laptop.** When set, every `/v1`
 endpoint except `/v1/healthz` requires `Authorization: Bearer <token>`. CORS does not

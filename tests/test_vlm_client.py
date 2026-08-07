@@ -172,6 +172,96 @@ class TestVLMClient:
             os.unlink(image_path)
 
     @pytest.mark.asyncio
+    async def test_missing_model_is_not_reported_as_unreachable(
+        self, vlm_client: VLMClient
+    ) -> None:
+        """Ollama's 404 "model not found" must name the model, not the server.
+
+        Surfacing it as "model server not reachable at <url>" sent operators to
+        restart a server that was answering fine.
+        """
+        import base64
+        import os
+        import tempfile
+
+        from framesleuth.errors import ModelNotLoadedError
+
+        png_data = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        )
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+            f.write(png_data)
+            image_path = f.name
+
+        try:
+            with patch("aiohttp.ClientSession") as mock_session:
+                mock_resp = AsyncMock()
+                mock_resp.status = 404
+                mock_resp.text = AsyncMock(
+                    return_value='{"error":"model \\"qwen2.5vl\\" not found, try pulling it first"}'
+                )
+
+                mock_req = AsyncMock()
+                mock_req.__aenter__.return_value = mock_resp
+                mock_req.__aexit__.return_value = False
+
+                session = mock_session.return_value
+                session.post.side_effect = [mock_req]
+
+                with pytest.raises(ModelNotLoadedError) as excinfo:
+                    await vlm_client.analyze_frame(image_path, 5.0)
+                assert "Qwen/Qwen3-VL-8B-Instruct-GGUF" in excinfo.value.message
+                assert "not reachable" not in excinfo.value.message
+        finally:
+            os.unlink(image_path)
+
+    @pytest.mark.asyncio
+    async def test_a_plain_404_is_not_blamed_on_the_model(self, vlm_client: VLMClient) -> None:
+        """A 404 with no model-not-found body means the URL, not the model.
+
+        The first version of this fix triggered on `status == 404` alone. But a
+        wrong base_url, a reverse proxy, or an engine that does not serve
+        /v1/chat/completions at that path all answer 404 — and telling the
+        operator to `ollama pull` a model that is already there is the same
+        misattribution the fix was written to remove, just pointing the other
+        way. ModelNotLoadedError must require positive evidence.
+        """
+        import base64
+        import os
+        import tempfile
+
+        from framesleuth.errors import ModelNotLoadedError, ModelUnavailableError
+
+        png_data = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        )
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+            f.write(png_data)
+            image_path = f.name
+
+        try:
+            with patch("aiohttp.ClientSession") as mock_session:
+                mock_resp = AsyncMock()
+                mock_resp.status = 404
+                # What nginx returns when the path is wrong.
+                mock_resp.text = AsyncMock(
+                    return_value="<html><head><title>404 Not Found</title></head></html>"
+                )
+
+                mock_req = AsyncMock()
+                mock_req.__aenter__.return_value = mock_resp
+                mock_req.__aexit__.return_value = False
+
+                session = mock_session.return_value
+                session.post.side_effect = [mock_req]
+
+                with pytest.raises(ModelUnavailableError) as excinfo:
+                    await vlm_client.analyze_frame(image_path, 5.0)
+                assert not isinstance(excinfo.value, ModelNotLoadedError)
+        finally:
+            os.unlink(image_path)
+
+    @pytest.mark.asyncio
     async def test_parse_response_with_markdown(self, vlm_client: VLMClient) -> None:
         """Test parsing JSON response wrapped in markdown code blocks."""
         inner = json.dumps(

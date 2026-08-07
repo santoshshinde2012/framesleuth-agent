@@ -11,6 +11,11 @@ from typing import Literal
 from pydantic import Field
 from pydantic_settings import BaseSettings
 
+# Loopback dev servers, always in the CORS allowlist. Keeping these out of
+# WEB_ORIGINS lets that setting default to empty (trust nothing remote) without
+# breaking `npm run dev` against a local agent on a fresh checkout.
+LOCAL_DEV_ORIGINS = ("http://localhost:3000", "http://127.0.0.1:3000")
+
 
 class Settings(BaseSettings):
     """Application-wide configuration loaded from environment and .env file.
@@ -210,14 +215,21 @@ class Settings(BaseSettings):
     # extension ID is 32 chars of [a-p], so a pattern like
     # `chrome-extension://[a-p]{32}` would allowlist *every* installed extension.
     CHROME_EXTENSION_IDS: str = ""
-    # Browser origins (besides the extension) allowed to call this API directly —
-    # e.g. the hosted site connecting to your locally-running agent. The deployed
-    # marketing site + local dev are allowed by default so the "Try it" widget
-    # works with zero config; override with a comma-separated WEB_ORIGINS.
-    WEB_ORIGINS: str = (
-        "https://framesleuth.com,https://www.framesleuth.com,"
-        "http://localhost:3000,http://127.0.0.1:3000"
-    )
+    # Extra browser origins (besides the extension and local dev) allowed to call
+    # this API directly. EMPTY BY DEFAULT — a stock install trusts no remote site.
+    # This previously shipped with `https://framesleuth.com` in the allowlist so
+    # the hosted "Try it" widget worked with zero config, which meant a page on
+    # that site could read every bundle on the operator's machine without anyone
+    # opting in. That is the opposite of the product's promise. Letting the hosted
+    # site talk to your agent is now a line you paste deliberately:
+    #   WEB_ORIGINS=https://framesleuth.com,https://www.framesleuth.com
+    WEB_ORIGINS: str = ""
+    # Whether http://localhost:3000 and http://127.0.0.1:3000 are trusted
+    # without being listed. On by default so a fresh checkout's `npm run dev`
+    # works with no configuration. Turn it OFF on any deployment that serves no
+    # local dev server — otherwise there is no setting that yields an empty CORS
+    # allowlist, and "trust no browser origin" becomes unreachable.
+    ALLOW_LOCAL_DEV_ORIGINS: bool = True
     # Optional bearer token: when set, every /v1 endpoint except /v1/healthz
     # requires `Authorization: Bearer <API_TOKEN>`. CORS only controls what a
     # browser may *read* — it does not stop DNS-rebinding pages or other local
@@ -238,8 +250,25 @@ class Settings(BaseSettings):
 
     @property
     def web_origins_list(self) -> list[str]:
-        """Parsed, de-blanked list of allowed browser origins."""
-        return [o.strip() for o in self.WEB_ORIGINS.split(",") if o.strip()]
+        """Allowed browser origins: loopback dev servers plus any opted-in origins.
+
+        The loopback entries are on by default so `npm run dev` against a local
+        agent works with no configuration — a page already served from this
+        machine is inside the trust boundary the product draws. Anything *off*
+        the machine has to be listed in ``WEB_ORIGINS`` by the operator.
+
+        They are NOT unconditional. Making them so left no configuration at all
+        that produces an empty allowlist: a headless or hardened deployment,
+        which serves no dev server and wants to trust no browser origin, still
+        got two. Set ``ALLOW_LOCAL_DEV_ORIGINS=false`` there.
+
+        De-duplicated, order-preserving, so re-listing a dev origin does not put
+        it in the CORS allowlist twice.
+        """
+        base = LOCAL_DEV_ORIGINS if self.ALLOW_LOCAL_DEV_ORIGINS else ()
+        configured = (o.strip() for o in self.WEB_ORIGINS.split(","))
+        origins = [*base, *(o for o in configured if o)]
+        return list(dict.fromkeys(origins))
 
     @property
     def grounding_roots_list(self) -> list[Path]:

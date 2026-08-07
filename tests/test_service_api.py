@@ -746,14 +746,62 @@ def test_healthz_includes_render_availability(tmp_path: Path) -> None:
         assert isinstance(render["ready"], bool)
 
 
-def test_cors_allows_hosted_site_to_reach_local_agent(tmp_path: Path) -> None:
-    """The hosted site origin can preflight the loopback API (CORS + Private Network).
+def test_healthz_reports_degraded_when_the_vision_model_is_not_installed(tmp_path: Path) -> None:
+    """`vlm: ready` is the README's promise of real classification — it must be earned.
+
+    A model server with VLM_MODEL unpulled still answers 200 on /v1/models, so
+    the endpoint used to report `healthy` / `vlm: ready` for an install where
+    every analysis would fall back to sidecars.
+    """
+    from unittest.mock import AsyncMock, patch
+
+    settings = _make_settings(tmp_path)
+    settings.VLM_MODEL = "qwen2.5vl"
+    with patch("aiohttp.ClientSession") as mock_session:
+        resp_mock = AsyncMock()
+        resp_mock.status = 200
+        resp_mock.json = AsyncMock(return_value={"data": [{"id": "llama3.2:1b"}]})
+        session = mock_session.return_value.__aenter__.return_value
+        session.get.return_value.__aenter__.return_value = resp_mock
+
+        with TestClient(create_app(settings)) as client:
+            body = client.get("/v1/healthz").json()
+
+    assert body["services"]["vlm"]["status"] == "degraded"
+    assert body["services"]["vlm"]["error"] == "model 'qwen2.5vl' not loaded"
+    assert body["status"] == "degraded"
+
+
+def test_cors_does_not_trust_the_hosted_site_by_default(tmp_path: Path) -> None:
+    """A stock install trusts no remote origin — not even the vendor's own site.
+
+    The default allowlist used to include https://framesleuth.com, so a page on
+    that site could read bundles off any operator's machine without anyone ever
+    opting in. In a product whose promise is that nothing leaves your machine,
+    that has to be a deliberate paste, not a shipped default.
+    """
+    app = create_app(_make_settings(tmp_path))
+    with TestClient(app) as client:
+        resp = client.options(
+            "/v1/healthz",
+            headers={
+                "Origin": "https://framesleuth.com",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+        assert resp.headers.get("access-control-allow-origin") is None
+
+
+def test_cors_allows_hosted_site_when_operator_opts_in(tmp_path: Path) -> None:
+    """Opted in, the hosted site can preflight the loopback API (CORS + Private Network).
 
     This is what lets framesleuth.com talk to a locally-running agent: the browser
     sends a Private Network Access preflight, and the API must echo the origin plus
     Access-Control-Allow-Private-Network so Chrome doesn't block the real request.
     """
-    app = create_app(_make_settings(tmp_path))
+    settings = _make_settings(tmp_path)
+    settings.WEB_ORIGINS = "https://framesleuth.com"
+    app = create_app(settings)
     with TestClient(app) as client:
         resp = client.options(
             "/v1/healthz",
@@ -768,6 +816,17 @@ def test_cors_allows_hosted_site_to_reach_local_agent(tmp_path: Path) -> None:
         assert resp.headers.get("access-control-allow-private-network") == "true"
 
 
+def test_local_dev_origin_works_without_configuration(tmp_path: Path) -> None:
+    """Emptying the default must not break `npm run dev` against a local agent."""
+    app = create_app(_make_settings(tmp_path))
+    with TestClient(app) as client:
+        resp = client.options(
+            "/v1/healthz",
+            headers={"Origin": "http://localhost:3000", "Access-Control-Request-Method": "GET"},
+        )
+        assert resp.headers.get("access-control-allow-origin") == "http://localhost:3000"
+
+
 def test_cors_rejects_unknown_web_origin(tmp_path: Path) -> None:
     """An origin not on the allowlist is never granted access."""
     app = create_app(_make_settings(tmp_path))
@@ -779,11 +838,50 @@ def test_cors_rejects_unknown_web_origin(tmp_path: Path) -> None:
         assert resp.headers.get("access-control-allow-origin") is None
 
 
+def test_the_cors_allowlist_can_be_emptied(tmp_path: Path) -> None:
+    """A hardened deployment must be able to trust NO browser origin.
+
+    The loopback entries were made unconditional, which left no configuration at
+    all that produces an empty allowlist — a headless deployment serving no dev
+    server still trusted two origins, and the security checklist told operators
+    it "starts empty". ALLOW_LOCAL_DEV_ORIGINS restores the reachable state.
+    """
+    settings = _make_settings(tmp_path)
+    settings.WEB_ORIGINS = ""
+    settings.ALLOW_LOCAL_DEV_ORIGINS = False
+    assert settings.web_origins_list == []
+
+    # ...while the default still makes `npm run dev` work with no config.
+    settings.ALLOW_LOCAL_DEV_ORIGINS = True
+    assert settings.web_origins_list == ["http://localhost:3000", "http://127.0.0.1:3000"]
+
+
+def test_web_origins_are_deduplicated(tmp_path: Path) -> None:
+    """Re-listing a loopback origin must not put it in the allowlist twice.
+
+    The docstring promised de-duplication and nothing tested it: removing the
+    `dict.fromkeys` left the whole suite green.
+    """
+    settings = _make_settings(tmp_path)
+    settings.WEB_ORIGINS = "http://localhost:3000, https://example.dev, https://example.dev"
+    assert settings.web_origins_list == [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://example.dev",
+    ]
+
+
 def test_web_origins_setting_is_honored(tmp_path: Path) -> None:
     """A custom WEB_ORIGINS allowlist is respected (and parsed from the CSV string)."""
     settings = _make_settings(tmp_path)
     settings.WEB_ORIGINS = "https://example.dev, http://localhost:4000"
-    assert settings.web_origins_list == ["https://example.dev", "http://localhost:4000"]
+    # Loopback dev origins are present by default; the setting adds to them.
+    assert settings.web_origins_list == [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://example.dev",
+        "http://localhost:4000",
+    ]
     app = create_app(settings)
     with TestClient(app) as client:
         ok = client.options(
@@ -819,12 +917,31 @@ def test_healthz_never_leaks_the_interpreter_path(tmp_path: Path) -> None:
 
 
 def test_version_carries_the_render_diagnostics(tmp_path: Path) -> None:
-    """The verbose diagnostics live on the token-GATED endpoint instead."""
+    """The verbose diagnostics live on the token-GATED endpoint instead.
+
+    Asserts the FIELDS, not just that a `render` key exists. The weaker version
+    of this test was cited as already pinning this behaviour, and it did not:
+    deleting `python` and `hint` from the handler left the suite green. Those
+    two are the whole reason the endpoint exists — README and runbook now send
+    operators here to diagnose a failed HTML→video render, so an empty `render`
+    object would be a documented dead end.
+
+    They live on /v1/version rather than /v1/healthz precisely because the
+    interpreter path is sensitive: healthz is the one public endpoint, and this
+    one is behind API_TOKEN when a token is configured.
+    """
     settings = _make_settings(tmp_path)
     with TestClient(create_app(settings)) as client:
         body = client.get("/v1/version").json()
         assert "render" in body
+        render = body["render"]
+        assert render.get("python"), "the interpreter path is the point of this endpoint"
+        assert render.get("hint"), "operators are sent here for an actionable hint"
         assert set(body["capabilities"]) >= {"render_html", "grounding_over_http"}
+
+        # And the sensitive half must NOT be on the public endpoint.
+        health = client.get("/v1/healthz").json()
+        assert health.get("render", {}).get("python") is None
 
 
 def test_error_responses_are_flat_and_match_the_published_schema(tmp_path: Path) -> None:

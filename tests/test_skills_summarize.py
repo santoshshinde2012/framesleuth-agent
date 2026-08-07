@@ -86,7 +86,11 @@ async def test_summarize_recording_happy_path() -> None:
     transcript = Transcript(segments=[], words=[])
     client = _FakeClient()
     out = await summarize_recording(
-        scenes, transcript, system_prompt="SP", user_intent=None, client=client  # type: ignore[arg-type]
+        scenes,
+        transcript,
+        system_prompt="SP",
+        user_intent=None,
+        client=client,  # type: ignore[arg-type]
     )
     assert out == "SUMMARY OK"
     assert client.calls and client.calls[0][0] == "SP"
@@ -102,7 +106,11 @@ async def test_summarize_recording_no_evidence_returns_none() -> None:
     """
     client = _FakeClient()
     out = await summarize_recording(
-        [], Transcript(segments=[], words=[]), system_prompt="SP", user_intent=None, client=client  # type: ignore[arg-type]
+        [],
+        Transcript(segments=[], words=[]),
+        system_prompt="SP",
+        user_intent=None,
+        client=client,  # type: ignore[arg-type]
     )
     assert out is None
     assert client.calls == []

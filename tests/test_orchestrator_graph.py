@@ -117,7 +117,9 @@ async def test_run_uses_vlm_when_frames_present(
     assert vlm.calls >= 1
     job = await store.get_job("job-vlm")
     assert job is not None and job.state == JobState.DONE and job.progress_pct == 100
-    assert "ABCDEF1234567890" not in bundle_path.read_text(encoding="utf-8")
+    assert "ABCDEF1234567890" not in bundle_path.read_text(  # pragma: allowlist secret
+        encoding="utf-8"
+    )
 
     # The job's scratch dir is cleaned up, but the persisted artifacts survive.
     assert not (settings.BUNDLE_DIR / "job-vlm" / ".work").exists()
@@ -151,7 +153,7 @@ async def test_persisted_artifacts_are_redacted(
     settings = _settings(tmp_path)
     _stub_preprocess(monkeypatch, duration_s=5.0)
 
-    secret = "Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcdefghijklmnopqrstuvwxyz012345"
+    secret = "Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcdefghijklmnopqrstuvwxyz012345"  # pragma: allowlist secret  # noqa: E501
     spoken = "the admin password=Hunter2Secret9 is on screen"
 
     def _fake_transcribe(self: object, audio_path: object, *, has_audio: bool) -> Transcript:

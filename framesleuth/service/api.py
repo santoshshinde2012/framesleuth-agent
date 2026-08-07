@@ -640,9 +640,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:  # noqa: C901
         logger.exception("Unhandled error: %s", type(exc).__name__)
         return _error_response(500, "Internal server error", "internal_error")
 
-    # Allow the configured capture-extension origins *and* the explicit web
-    # origins (the hosted site connecting to a locally-running agent, plus local
-    # dev). Origins are an exact allowlist — never a pattern: every Chrome
+    # Allow the configured capture-extension origins *and* whatever
+    # `web_origins_list` resolves to: loopback dev servers (unless
+    # ALLOW_LOCAL_DEV_ORIGINS is off) plus anything the operator opted into via
+    # WEB_ORIGINS. The hosted site is NOT trusted by default — this is the
+    # open-source, runs-on-your-machine half of the product, and shipping a
+    # remote origin in the default allowlist contradicted that.
+    # Origins are an exact allowlist — never a pattern: every Chrome
     # extension ID is 32 chars of [a-p], so a `chrome-extension://[a-p]{32}`
     # regex would open the API to *every* extension the user has installed.
     #
@@ -674,6 +678,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:  # noqa: C901
             coder_url=settings.CODER_URL,
             bundle_dir=str(settings.BUNDLE_DIR),
             queue_depth=await state.store.count_active(),
+            # A reachable server with the model unpulled still answers 200. The
+            # README treats `vlm: ready` as "recordings analyze with a real
+            # classification", so the model itself has to be confirmed.
+            vlm_model=settings.VLM_MODEL,
         )
         payload = health.model_dump()
         # Surface optional HTML→video readiness so it's diagnosable in the running

@@ -15,7 +15,8 @@ from typing import TYPE_CHECKING, Any
 import aiohttp
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
-from framesleuth.errors import ModelUnavailableError
+from framesleuth.clients.model_catalog import looks_like_missing_model
+from framesleuth.errors import ModelNotLoadedError, ModelUnavailableError
 from framesleuth.logging_config import get_logger
 from framesleuth.schemas import UiElement
 
@@ -427,7 +428,8 @@ class VLMClient:
             Response text on success, or ``None`` to signal a retriable 503.
 
         Raises:
-            ModelUnavailableError: On non-retriable or exhausted failures.
+            ModelNotLoadedError: When the server answers but the model is absent.
+            ModelUnavailableError: On other non-retriable or exhausted failures.
         """
         if resp.status == 200:
             text: str = await resp.text()
@@ -443,6 +445,17 @@ class VLMClient:
         if not retriable:
             body = (await resp.text())[:500]
             logger.error(f"VLM returned non-retriable {resp.status}: {body}")
+            # A 404 (or an engine that phrases it as 400 "model not found") means
+            # the server IS answering and only the model is missing. Collapsing
+            # that into "not reachable at <url>" sent operators to restart a
+            # server that was already up instead of pulling the model.
+            # NOTE: the body must actually say so. A bare 404 is ambiguous —
+            # a wrong base_url, a reverse proxy, or an engine not serving
+            # /v1/chat/completions at that path all return one, and reporting
+            # those as "model not loaded" would repeat the exact misattribution
+            # this branch exists to remove, just pointing the other way.
+            if looks_like_missing_model(body):
+                raise ModelNotLoadedError("VLM", self.model, self.base_url)
         raise ModelUnavailableError("VLM", self.base_url)
 
     def _parse_response(self, response_text: str) -> FrameAnalysisResponse:

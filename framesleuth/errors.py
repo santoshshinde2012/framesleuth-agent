@@ -21,6 +21,8 @@ class ErrorCode(StrEnum):
     VLM_UNAVAILABLE = "vlm_unavailable"
     CODER_UNAVAILABLE = "coder_unavailable"
     ASR_UNAVAILABLE = "asr_unavailable"
+    # Distinct from the two above: the server answered, the *model* is missing.
+    MODEL_NOT_LOADED = "model_not_loaded"
 
     # Processing errors
     PREPROCESSING_FAILED = "preprocessing_failed"
@@ -113,6 +115,45 @@ class ModelUnavailableError(FramesleutheException):
             hint=hint,
             status_code=503,
         )
+
+
+class ModelNotLoadedError(ModelUnavailableError):
+    """Raised when the model server answers but the requested model is absent.
+
+    Split out from its parent because the *fix* is different: the server is up,
+    so restarting it, checking the port, or re-reading the URL changes nothing —
+    the operator has to pull/load the model (or point config at one that is
+    loaded). Reporting this as "not reachable at <url>" sent people to debug a
+    server that was already answering.
+
+    Deliberately a *subclass* of ModelUnavailableError: every existing
+    ``except ModelUnavailableError`` path (the job-retry accounting in the API,
+    the 503 envelope, the clients' own re-raise guards) keeps catching it
+    unchanged, and only the message/code get more specific.
+    """
+
+    def __init__(self, model_name: str, model: str, url: str) -> None:
+        """Initialize with the server role, the missing model, and the URL.
+
+        Args:
+            model_name: Role of the server ("VLM", "Coder").
+            model: The model identifier that was requested but is not loaded.
+            url: URL of the (reachable) model server.
+        """
+        # Skips ModelUnavailableError.__init__, whose message hard-codes
+        # "not reachable" — the exact wording this class exists to avoid.
+        FramesleutheException.__init__(
+            self,
+            message=f"Model '{model}' is not loaded on the {model_name} server at {url}",
+            code=ErrorCode.MODEL_NOT_LOADED,
+            hint=(
+                f"The server is reachable — the model is not. Load it "
+                f"(e.g. `ollama pull {model}`) or set {model_name.upper()}_MODEL "
+                f"to a model this server has."
+            ),
+            status_code=503,
+        )
+        self.model = model
 
 
 class UploadTooLargeError(FramesleutheException):

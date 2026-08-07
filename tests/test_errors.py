@@ -5,6 +5,7 @@ import pytest
 from framesleuth.errors import (
     DurationExceededError,
     ErrorCode,
+    ModelNotLoadedError,
     ModelUnavailableError,
     UnsupportedMediaError,
     UploadTooLargeError,
@@ -26,6 +27,20 @@ class TestErrorTaxonomy:
         error = ModelUnavailableError("VLM", "http://127.0.0.1:8080")
         assert error.status_code == 503
         assert "127.0.0.1:8080" in error.message
+
+    def test_model_not_loaded_error_does_not_claim_unreachable(self) -> None:
+        """A missing model must not be reported as an unreachable server."""
+        error = ModelNotLoadedError("VLM", "qwen2.5vl", "http://127.0.0.1:11434")
+        assert error.code == ErrorCode.MODEL_NOT_LOADED
+        assert error.status_code == 503
+        assert "qwen2.5vl" in error.message
+        assert "not reachable" not in error.message
+        assert error.hint is not None
+        assert "ollama pull qwen2.5vl" in error.hint
+
+    def test_model_not_loaded_is_caught_as_model_unavailable(self) -> None:
+        """Existing `except ModelUnavailableError` paths must keep catching it."""
+        assert issubclass(ModelNotLoadedError, ModelUnavailableError)
 
     def test_upload_too_large_error(self) -> None:
         """Test UploadTooLargeError properties."""

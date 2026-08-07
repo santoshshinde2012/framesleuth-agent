@@ -223,21 +223,36 @@ Expected response (all services up):
   "timestamp": "2026-06-22T08:25:19.936358+00:00",
   "render": {
     "playwright": true, "playwright_version": "1.49.0", "chromium": true,
-    "ffmpeg": true, "python": "/path/to/.venv/bin/python", "ready": true, "hint": null
+    "ffmpeg": true, "python": null, "ready": true, "hint": null
   }
 }
 ```
 
 The `render` block reports readiness of the optional HTML→video capability in the
-running process. When `ready` is `false`, `hint` says what to install and `python`
-shows which interpreter the server is using (see the HTML→video troubleshooting
-entry below). `queue_depth` reflects the number of jobs currently queued or running
-(bounded by `MAX_CONCURRENT_JOBS`).
+running process. `/v1/healthz` is public (never token-gated, so a client can tell
+"backend down" from "backend needs a token"), so it always blanks `python` and
+`hint` rather than publish the server's filesystem layout to an unauthenticated
+caller. For those two fields, ask `/v1/version` — which **is** covered by the
+token gate when `API_TOKEN` is set:
+
+```bash
+curl -s http://127.0.0.1:8010/v1/version | python -m json.tool
+# With API_TOKEN set:
+curl -s -H "Authorization: Bearer $API_TOKEN" http://127.0.0.1:8010/v1/version
+```
+
+`queue_depth` reflects the number of jobs currently queued or running (bounded by
+`MAX_CONCURRENT_JOBS`).
 
 Without the model servers running you'll instead see `"status": "unhealthy"`
 with `vlm`/`coder` reporting `"status": "unavailable"` and `storage: ready`.
 That is expected — analysis still runs in degraded (sidecar-only) mode, and the
 resulting bundle's `analysis_quality` records what was skipped.
+
+If the server is up but has not pulled `VLM_MODEL`, `vlm` reports
+`"status": "degraded"` with `"error": "model '<name>' not loaded"` and the overall
+status is `degraded`. Fix it with `ollama pull <name>` — restarting the server
+will not help, because the server was never the problem.
 
 ### Model servers
 
@@ -375,10 +390,22 @@ curl -s http://127.0.0.1:8010/v1/healthz | python -m json.tool
 # → "render": {"playwright": true, "ffmpeg": true, ...}  (chromium flips true after first render)
 ```
 
-If `render.playwright` is still `false`, the server is the wrong environment —
-check `render.python` (the interpreter it actually uses) and reinstall there. To
-provision the browser yourself instead of auto-download, set
-`FRAMESLEUTH_AUTO_INSTALL_BROWSER=0` and run `playwright install chromium`.
+If `render.playwright` is still `false`, the server is the wrong environment.
+Ask **`/v1/version`** which interpreter it uses — `/v1/healthz` is public and so
+strips `python` and `hint` rather than publish the deployment layout to an
+unauthenticated caller:
+
+```bash
+curl -s http://127.0.0.1:8010/v1/version | python -m json.tool
+# → "render": {"ready": false, "python": "/path/to/the/interpreter", "hint": "...", ...}
+
+# /v1/version is token-gated when API_TOKEN is set:
+curl -s -H "Authorization: Bearer $API_TOKEN" http://127.0.0.1:8010/v1/version
+```
+
+Reinstall into the interpreter `render.python` names. To provision the browser
+yourself instead of auto-download, set `FRAMESLEUTH_AUTO_INSTALL_BROWSER=0` and
+run `playwright install chromium`.
 
 ---
 
