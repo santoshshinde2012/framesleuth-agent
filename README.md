@@ -127,9 +127,9 @@ cd framesleuth-agent
 ollama serve &                                  # skip if already running
 ollama pull qwen2.5vl && ollama pull qwen2.5-coder:7b
 
-# 2. Install
-uv venv && source .venv/bin/activate
-uv pip install -e ".[dev]"
+# 2. Install — from uv.lock, so you get the versions CI actually tested
+uv sync --frozen --extra dev
+source .venv/bin/activate
 python scripts/download_models.py               # optional: pre-warm ASR + check servers
 
 # 3. Configure + start the API (binds 127.0.0.1:8010)

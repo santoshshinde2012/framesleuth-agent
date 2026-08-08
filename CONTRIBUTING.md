@@ -7,11 +7,37 @@ Thanks for looking. This is an Apache-2.0 project and patches are welcome.
 Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
-uv sync --extra dev
+uv sync --frozen --extra dev
 ```
+
+`--frozen` installs exactly what `uv.lock` records — the versions CI tested.
+Without it, `uv sync` will happily re-resolve and rewrite the lock, which is how
+you end up debugging a failure nobody else can reproduce.
 
 ffmpeg is **not** required — PyAV bundles its own. You do need a vision model
 endpoint to run the full pipeline; see [README.md](README.md) for the options.
+
+### Changing a dependency
+
+`uv.lock` is committed and CI runs `uv lock --check`, so a `pyproject.toml` edit
+that was never re-locked fails the build rather than being quietly ignored:
+
+```bash
+uv lock                       # after editing pyproject.toml
+uv sync --frozen --extra dev
+```
+
+To take newer versions deliberately — which is how updates happen here, since
+this repo opens no automatic version-bump PRs:
+
+```bash
+uv lock --upgrade
+uv sync --frozen --extra dev
+# then run the full gate below; an upgrade that breaks something fails locally
+```
+
+Commit `uv.lock` alongside the change. A dependency bump with no lock diff means
+the bump did not happen.
 
 ## The checks CI runs
 
