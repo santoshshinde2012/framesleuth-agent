@@ -9,28 +9,36 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
+# uv, for `--frozen` installs. Pinned by digest-bearing tag rather than :latest,
+# because "reproducible builds" that fetch an unpinned installer are not.
+COPY --from=ghcr.io/astral-sh/uv:0.12.3 /uv /usr/local/bin/uv
+
 # Dependency metadata first, so editing source does NOT invalidate the (slow)
 # dependency layer. Previously `COPY . .` preceded the install, so every code
 # change re-resolved every dependency and re-downloaded ~150 MB of Chromium.
-COPY pyproject.toml README.md ./
+#
+# uv.lock is part of that metadata now. This stage used to `pip install "."`,
+# which re-resolved every dependency at build time — so two builds of the SAME
+# commit could ship different versions, and the image was the one artifact where
+# that mattered most, being the thing users actually run.
+COPY pyproject.toml uv.lock README.md ./
 COPY framesleuth/__init__.py framesleuth/__init__.py
 
 # Render support (HTML→video via Playwright + headless Chromium) is ON by default
 # so the feature works out of the box; build with --build-arg INSTALL_RENDER=false
 # for a slimmer image without it.
 ARG INSTALL_RENDER=true
-RUN python -m venv /opt/venv \
-    && /opt/venv/bin/pip install --no-cache-dir --upgrade pip \
-    && if [ "$INSTALL_RENDER" = "true" ]; then \
-           /opt/venv/bin/pip install --no-cache-dir ".[render]"; \
-       else \
-           /opt/venv/bin/pip install --no-cache-dir "."; \
-       fi
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv
+RUN if [ "$INSTALL_RENDER" = "true" ]; then \
+        uv sync --frozen --no-dev --no-install-project --extra render; \
+    else \
+        uv sync --frozen --no-dev --no-install-project; \
+    fi
 
 # Now the real source. Installed non-editable and without deps (already resolved
 # above) — an editable install in an image leaves a .pth pointing at a build path.
 COPY . .
-RUN /opt/venv/bin/pip install --no-cache-dir --no-deps .
+RUN uv pip install --python /opt/venv/bin/python --no-cache-dir --no-deps .
 
 
 FROM python:3.11-slim AS runtime
