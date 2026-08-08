@@ -536,6 +536,14 @@ def test_delete_report_purges_bundle_and_row(tmp_path: Path) -> None:
     with TestClient(app) as client:
         app.state.app_state.orchestrator.run = fake_run
         job_id = client.post("/v1/analyze", files=_upload("v.mp4", b"vid")).json()["job_id"]
+        # Wait for the analysis to finish before asserting on anything it
+        # produces. Both lines below depend on it: the bundle directory is
+        # created inside fake_run, and DELETE /v1/report refuses an ACTIVE job
+        # with 409 by design (see test_delete_report_refuses_active_job).
+        # Without this, the test raced the job it had just started — green on an
+        # idle laptop, 409 on every CI runner.
+        _wait_terminal(client, job_id)
+
         bundle_dir = app.state.app_state.settings.BUNDLE_DIR / job_id
         assert bundle_dir.exists()
 
