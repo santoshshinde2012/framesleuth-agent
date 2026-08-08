@@ -108,19 +108,21 @@ jobs:
       # a transitive dep should surface immediately, not gate an unrelated fix.
       #
       # Because it never fails the build, the output only helps if someone reads
-      # it. As of 2026-08-09 it reports five findings, all in DEV tooling and all
-      # triaged as unreachable here — recorded so the next reader compares
-      # against this list instead of re-deriving it:
+      # it. Against the committed uv.lock (90 packages, checked 2026-08-09) it
+      # reports three findings, all in DEV tooling and all triaged as
+      # unreachable here — recorded so the next reader compares against this
+      # list instead of re-deriving it:
       #
-      #   black 23.12.0     GHSA-3936-cmfr-pm3m (HIGH)  needs attacker control of
-      #                     --python-cell-magics; we never pass that option, and
-      #                     black runs as `black --check framesleuth tests`.
-      #   black 23.12.0     GHSA-fj7x-q9j7-g6q6 (MED)   ReDoS on hostile source.
-      #   setuptools 75.6.0 GHSA-5rjg-fvgr-3xxf (HIGH)  PackageIndex path
-      #                     traversal — the easy_install download path, unused.
-      #   setuptools 75.6.0 GHSA-h35f-9h28-mq5c (MED)   sdist MANIFEST.in bypass;
-      #                     we publish no sdist from CI.
-      #   pytest 7.4.3      GHSA-6w46-j5rx-g56g (MED)   local tmpdir permissions.
+      #   black 23.12.0  GHSA-3936-cmfr-pm3m (HIGH)  needs attacker control of
+      #                  --python-cell-magics; we never pass that option, and
+      #                  black runs as `black --check framesleuth tests`.
+      #   black 23.12.0  GHSA-fj7x-q9j7-g6q6 (MED)   ReDoS on hostile source.
+      #   pytest 7.4.3   GHSA-6w46-j5rx-g56g (MED)   local tmpdir permissions.
+      #
+      # NOTHING in the runtime dependency set carries an advisory. The two
+      # setuptools findings that used to be here went away with the lockfile —
+      # they came from the ambient build environment the old unpinned install
+      # happened to resolve, which is its own small argument for pinning.
       #
       # Deliberately NOT auto-upgraded: the fix for the black findings is 26.3.1,
       # which reformats the entire codebase. A repo-wide diff to close an
