@@ -152,3 +152,41 @@ def test_render_availability_reports_a_stable_shape() -> None:
     assert info["ready"] == (info["playwright"] and info["chromium"] and info["ffmpeg"])
     if not info["ready"]:
         assert isinstance(info["hint"], str) and info["hint"]
+
+
+def test_hint_does_not_ask_for_a_step_the_server_performs_itself(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Don't tell operators to run `playwright install chromium` when we auto-run it.
+
+    The README states plainly that "the Chromium build downloads automatically on
+    your first render, so there's no separate `playwright install chromium`
+    step", and then points operators at this hint to diagnose a failed render.
+    The hint said the opposite. Two sources of truth disagreeing about a setup
+    step is how someone concludes the docs are stale and stops trusting them.
+
+    Both directions are pinned: silent when the server handles it, explicit when
+    auto-install is switched off and it genuinely is the operator's job.
+    """
+    monkeypatch.setattr("framesleuth.pipeline.html_render._chromium_installed", lambda: False)
+    monkeypatch.setattr(
+        "framesleuth.pipeline.html_render.shutil.which", lambda _: "/usr/bin/ffmpeg"
+    )
+    monkeypatch.setattr("framesleuth.pipeline.html_render.metadata.version", lambda _: "1.49.0")
+
+    monkeypatch.delenv("FRAMESLEUTH_AUTO_INSTALL_BROWSER", raising=False)
+    auto = render_availability()
+    assert auto["ready"] is False
+    # The distinction is the FRAMING, not the mere mention: "Run: <cmd>" is an
+    # instruction, and naming the command inside the opt-out parenthetical is
+    # reference. Only the first one contradicts the README.
+    assert (
+        "Run: playwright install chromium" not in auto["hint"]
+    ), "instructed a manual step the server was about to perform on its own"
+    assert "no action needed" in auto["hint"], "an unready render must still say why"
+
+    monkeypatch.setenv("FRAMESLEUTH_AUTO_INSTALL_BROWSER", "0")
+    manual = render_availability()
+    assert (
+        "Run: playwright install chromium" in manual["hint"]
+    ), "with auto-install off, the operator must be told to run it"

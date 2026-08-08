@@ -710,6 +710,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:  # noqa: C901
         guessing whether a 404/503 means "unsupported" or "broken".
         """
         from framesleuth.pipeline.html_render import render_availability
+        from framesleuth.pipeline.ocr import ocr_available
 
         availability = render_availability()
         return m.VersionResponse(
@@ -721,7 +722,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:  # noqa: C901
             render=m.RenderAvailability(**availability),
             capabilities={
                 "render_html": bool(availability.get("ready")),
-                "ocr_backstop": settings.OCR_BACKSTOP,
+                # Both halves matter, and the setting alone is not the answer:
+                # OCR_BACKSTOP defaults to True but pytesseract is an optional
+                # extra, so a default install would otherwise advertise a
+                # capability it cannot perform. Same probe-don't-assume rule as
+                # render_html directly above.
+                "ocr_backstop": settings.OCR_BACKSTOP and ocr_available(),
                 "auth_required": bool(settings.API_TOKEN),
                 "webhook": bool(settings.WEBHOOK_URL.strip()),
                 "redact_pii": settings.REDACT_PII,

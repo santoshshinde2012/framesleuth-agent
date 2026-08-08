@@ -4,6 +4,7 @@ import json
 import time
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from framesleuth.config import Settings
@@ -86,18 +87,21 @@ def test_analyze_and_report_roundtrip(tmp_path: Path) -> None:
             "/v1/analyze",
             files=_upload("sample.mp4", b"video-content"),
         )
-        # Analysis is accepted (202) and runs in the background; the TestClient
-        # drains the background task before returning, so the job is done by now.
         assert response.status_code == 202
         payload = response.json()
         assert payload["status"] == "queued"
         job_id = payload["job_id"]
 
-        job = client.get(f"/v1/jobs/{job_id}")
-        assert job.status_code == 200
-        assert job.json()["state"] == "done"
+        # Wait rather than assume. The comment here used to claim the TestClient
+        # drained the background task before returning — true when analyses were
+        # Starlette BackgroundTasks, false since they became app-owned tasks (see
+        # _wait_terminal). The stale assumption made this the suite's one flaky
+        # test: it passed on an idle machine and failed roughly two runs in three
+        # under coverage instrumentation, i.e. exactly how CI runs it.
+        job = _wait_terminal(client, job_id)
+        assert job["state"] == "done"
         # Per-stage metrics are surfaced to the poller for observability.
-        assert job.json()["metrics"]["stages"]["understand"] == 1.2
+        assert job["metrics"]["stages"]["understand"] == 1.2
 
         report = client.get(f"/v1/report/{job_id}")
         assert report.status_code == 200
@@ -942,6 +946,33 @@ def test_version_carries_the_render_diagnostics(tmp_path: Path) -> None:
         # And the sensitive half must NOT be on the public endpoint.
         health = client.get("/v1/healthz").json()
         assert health.get("render", {}).get("python") is None
+
+
+def test_capabilities_probe_ocr_rather_than_trusting_the_setting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`ocr_backstop: true` must mean OCR can run, not that a flag is set.
+
+    OCR_BACKSTOP defaults to True while pytesseract is an optional extra, so
+    reporting the setting verbatim told every default install it had an OCR
+    backstop it could not perform. `capabilities` is a contract clients branch
+    on — the MCP server and the web client both read it to decide what to offer
+    — so a capability that is advertised has to be one the install can deliver.
+
+    Note the assertion runs with the engine forced ABSENT rather than relying on
+    the test machine's install: on a box that happens to have pytesseract, a
+    test that just read the endpoint would pass against the old buggy code too.
+    """
+    monkeypatch.setattr("framesleuth.pipeline.ocr.ocr_available", lambda: False)
+    settings = _make_settings(tmp_path)
+    assert settings.OCR_BACKSTOP, "precondition: the setting is on, the engine is not"
+
+    with TestClient(create_app(settings)) as client:
+        capabilities = client.get("/v1/version").json()["capabilities"]
+
+    assert (
+        capabilities["ocr_backstop"] is False
+    ), "advertised an OCR backstop with no OCR engine installed"
 
 
 def test_error_responses_are_flat_and_match_the_published_schema(tmp_path: Path) -> None:

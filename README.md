@@ -4,6 +4,12 @@
 
 # Framesleuth
 
+<p align="center">
+  <a href="https://github.com/thestackhub1/framesleuth-agent/actions/workflows/ci.yml"><img src="https://github.com/thestackhub1/framesleuth-agent/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="Apache-2.0" /></a>
+  <img src="https://img.shields.io/badge/python-3.11%20%7C%203.12-blue.svg" alt="Python 3.11 | 3.12" />
+</p>
+
 **Local video → structured context for coding agents, exposed over MCP.**
 
 Give Framesleuth *any* video — a bug recording, a feature demo, a design walkthrough, a
@@ -72,6 +78,12 @@ not published), so it never clashes with a native Ollama you may already run on
 > `docker compose -f docker-compose.yml up`. The base compose file defaults to
 > native Ollama on `http://host.docker.internal:11434`; override `VLM_URL` and
 > `CODER_URL` for another server.
+>
+> **Docker users: do not `cp .env.example .env`** — or if you have, comment out
+> `VLM_URL` and `CODER_URL` in it. Compose reads `.env` and its value beats the
+> default above, and `.env.example` ships the *native* value `127.0.0.1`, which
+> inside a container means the container itself. The symptom is a backend that
+> starts cleanly and then cannot reach any model.
 
 ### Run your first analysis (curl)
 
@@ -124,8 +136,9 @@ python scripts/download_models.py               # optional: pre-warm ASR + check
 cp .env.example .env                            # already defaults to the Ollama path above
 framesleuth-api                                 # or: uvicorn framesleuth.service.api:app --port 8010
 
-# 4. Verify
-curl -s http://127.0.0.1:11434/v1/models | grep -q qwen2.5vl && echo "VLM ready"
+# 4. Verify  (says so either way — a silent command is not a passing check)
+curl -s http://127.0.0.1:11434/v1/models | grep -q qwen2.5vl \
+  && echo "VLM ready" || echo "VLM NOT ready — run: ollama pull qwen2.5vl"
 curl -s http://127.0.0.1:8010/v1/healthz | python -m json.tool   # status: healthy, vlm: ready
 ```
 

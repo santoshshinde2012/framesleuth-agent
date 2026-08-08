@@ -32,8 +32,18 @@ if [[ "$(uname -s)" == "Darwin" && -z "${FRAMESLEUTH_FORCE_DOCKER:-}" ]]; then
   echo "so the vision model will be slow. For speed on macOS, use the native Ollama"
   echo "app + run the agent directly (no Docker) — see the README."
   echo
-  read -r -p "Start the Docker stack anyway? [y/N] " reply
-  [[ "$reply" =~ ^[Yy]$ ]] || { echo "Aborted — see the README 'Run it directly' path."; exit 0; }
+  # Only ASK when someone is there to answer. Without a terminal (CI, a wrapper
+  # script, `| tee`, stdin closed) `read` hits EOF instantly, leaves $reply
+  # empty, and the [y/N] default aborts — so the script exited 0 having started
+  # nothing, which every caller reads as "the stack is up". Proceeding is the
+  # right default here: running this script IS the request, and the warning
+  # above has already been printed.
+  if [[ -t 0 ]]; then
+    read -r -p "Start the Docker stack anyway? [y/N] " reply
+    [[ "$reply" =~ ^[Yy]$ ]] || { echo "Aborted — see the README 'Run it directly' path."; exit 0; }
+  else
+    echo "(no terminal to prompt on — starting anyway; Ctrl-C to stop)"
+  fi
 fi
 
 echo "Starting Framesleuth — first run pulls the models (~11 GB), so it can take a while."

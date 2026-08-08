@@ -245,15 +245,32 @@ def render_availability() -> dict[str, Any]:
         steps: list[str] = []
         if not info["playwright"]:
             steps.append('uv pip install -e ".[render]"')
-        if not info["chromium"]:
+        if not info["chromium"] and not _auto_install_enabled():
+            # Only ask for this when the server will NOT do it itself. Auto
+            # install is on by default and the README promises "there's no
+            # separate playwright install chromium step" — printing the step
+            # anyway contradicted the docs operators had just read, and sent
+            # them to run a command that was about to run on its own.
             steps.append("playwright install chromium")
         if not info["ffmpeg"]:
             steps.append("install ffmpeg on PATH")
-        info["hint"] = (
-            "HTML→video is unavailable in this process. Run: "
-            + " && ".join(steps)
-            + " — then restart the server (it must be the same environment)."
-        )
+
+        if steps:
+            info["hint"] = (
+                "HTML→video is unavailable in this process. Run: "
+                + " && ".join(steps)
+                + " — then restart the server (it must be the same environment)."
+            )
+        else:
+            # Everything the operator must do is done; only the auto-download is
+            # outstanding. Saying so beats an empty hint on an endpoint whose
+            # entire purpose is telling you what is wrong.
+            info["hint"] = (
+                "HTML→video is not ready yet: headless Chromium has not been "
+                "downloaded. It installs itself on the first render — no action "
+                "needed. (Set FRAMESLEUTH_AUTO_INSTALL_BROWSER=0 and run "
+                "`playwright install chromium` to do it ahead of time instead.)"
+            )
     return info
 
 
