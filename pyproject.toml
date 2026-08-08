@@ -162,6 +162,14 @@ ignore = [
     "D103",   # Missing function docstring
     "D104",   # Missing package docstring
     "D105",   # Missing magic method docstring
+    # RUF200 validates pyproject metadata and does not yet understand PEP 639,
+    # which replaced the `license = {text = "..."}` table with an SPDX string
+    # plus `license-files`. Our metadata is the modern, correct form — verified
+    # by building the wheel, which declares `Metadata-Version: 2.4`,
+    # `License-Expression: Apache-2.0` and `License-File: LICENSE`. Reverting to
+    # the deprecated table to satisfy a lint rule would make the packaging worse
+    # to make the linter quieter. Remove this once ruff supports PEP 639.
+    "RUF200", # false positive on PEP 639 license metadata
 ]
 
 [tool.ruff.lint.pydocstyle]

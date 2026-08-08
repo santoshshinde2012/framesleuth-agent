@@ -202,3 +202,76 @@ class TestHealthChecks:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestCoderModelVerification:
+    """The coder check had the same defect the VLM check was fixed for.
+
+    It returned ``ready`` on any 200 from ``/api/tags`` or ``/v1/models``, so an
+    install with the coder model unpulled passed its own health check and then
+    failed at the first request. The repo's own docs call that out as the thing
+    a health check must not do — and it had it in two places, one of which
+    nobody noticed while fixing the other.
+    """
+
+    @pytest.mark.asyncio
+    async def test_degraded_when_the_configured_model_is_absent(self) -> None:
+        from unittest.mock import patch
+
+        from framesleuth.clients.health import check_coder_health
+
+        async def catalog(_session: object, url: str) -> tuple[int, list[str] | None]:
+            # Both catalogues answer, neither lists the configured model.
+            return 200, ["llama3.2:latest"]
+
+        with patch("framesleuth.clients.health._fetch_catalog", side_effect=catalog):
+            health = await check_coder_health("http://localhost:11434", model="qwen2.5-coder")
+
+        assert health.status == "degraded"
+        assert "qwen2.5-coder" in (health.error or ""), "the message must name the model to pull"
+
+    @pytest.mark.asyncio
+    async def test_ready_when_the_model_is_listed(self) -> None:
+        from unittest.mock import patch
+
+        from framesleuth.clients.health import check_coder_health
+
+        async def catalog(_session: object, url: str) -> tuple[int, list[str] | None]:
+            # Bare config name against a tagged Ollama entry — the common case.
+            return 200, ["qwen2.5-coder:latest"]
+
+        with patch("framesleuth.clients.health._fetch_catalog", side_effect=catalog):
+            health = await check_coder_health("http://localhost:11434", model="qwen2.5-coder")
+
+        assert health.status == "ready"
+
+    @pytest.mark.asyncio
+    async def test_ready_when_the_catalog_cannot_be_read(self) -> None:
+        """Conservative, matching the VLM: "degraded" needs positive evidence of
+        absence, not absence of evidence. A health check that cries wolf gets
+        ignored, which costs more than the bug."""
+        from unittest.mock import patch
+
+        from framesleuth.clients.health import check_coder_health
+
+        async def catalog(_session: object, url: str) -> tuple[int, list[str] | None]:
+            return 200, None
+
+        with patch("framesleuth.clients.health._fetch_catalog", side_effect=catalog):
+            health = await check_coder_health("http://localhost:11434", model="qwen2.5-coder")
+
+        assert health.status == "ready"
+
+    @pytest.mark.asyncio
+    async def test_unavailable_when_the_server_does_not_answer(self) -> None:
+        from unittest.mock import patch
+
+        from framesleuth.clients.health import check_coder_health
+
+        async def catalog(_session: object, url: str) -> tuple[int, list[str] | None]:
+            return 503, None
+
+        with patch("framesleuth.clients.health._fetch_catalog", side_effect=catalog):
+            health = await check_coder_health("http://localhost:11434", model="qwen2.5-coder")
+
+        assert health.status == "unavailable"

@@ -682,6 +682,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:  # noqa: C901
             # README treats `vlm: ready` as "recordings analyze with a real
             # classification", so the model itself has to be confirmed.
             vlm_model=settings.VLM_MODEL,
+            coder_model=settings.CODER_MODEL,
         )
         payload = health.model_dump()
         # Surface optional HTML→video readiness so it's diagnosable in the running

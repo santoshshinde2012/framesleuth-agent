@@ -59,12 +59,17 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-    pids_limit: 512
     deploy:
       resources:
         limits:
           # Sized for MAX_CONCURRENT_JOBS=2 video decodes plus a Chromium render.
           memory: 6G
+          # Was a top-level `pids_limit: 512`. Compose v2.33 normalises that key
+          # into this one and then rejects the file for setting "distinct
+          # values" on both — so `docker compose up`, the README's headline
+          # one-command instruction, failed before pulling a single image.
+          # Declaring it here once is the same limit and validates.
+          pids: 512
     restart: unless-stopped
 
 volumes:

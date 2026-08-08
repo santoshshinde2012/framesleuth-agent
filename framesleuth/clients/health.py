@@ -130,12 +130,22 @@ async def check_vlm_health(
         return ServiceHealth(name="vlm", status="unavailable", error=str(e))
 
 
-async def check_coder_health(coder_url: str, timeout_s: float = 5.0) -> ServiceHealth:
+async def check_coder_health(
+    coder_url: str, timeout_s: float = 5.0, model: str | None = None
+) -> ServiceHealth:
     """Check coder (Ollama/llama.cpp) health.
+
+    Same distinction the VLM check makes, for the same reason: a reachable
+    server is not a usable one. This reported ``ready`` on any 200 from
+    ``/api/tags`` or ``/v1/models``, so an install with the coder model unpulled
+    passed its own health check and then failed at the first request — which the
+    repo's own documentation calls out as the thing a health check must not do.
 
     Args:
         coder_url: Base URL of coder server.
         timeout_s: Timeout for health check.
+        model: Configured coder model to confirm is loaded. ``None`` skips the
+            check (the caller has no model to verify).
 
     Returns:
         Health status of coder.
@@ -143,31 +153,28 @@ async def check_coder_health(coder_url: str, timeout_s: float = 5.0) -> ServiceH
     try:
         timeout = aiohttp.ClientTimeout(total=timeout_s)
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            # Try Ollama endpoint first
-            ollama_request = session.get(f"{coder_url}/api/tags")
-            ollama_resolved = await _resolve_response(ollama_request)
-            if hasattr(ollama_resolved, "__aenter__"):
-                async with ollama_resolved as resp:
-                    if resp.status == 200:
-                        return ServiceHealth(name="coder", status="ready")
-            elif ollama_resolved.status == 200:
+            # Ollama's native catalog first, then the OpenAI-compatible one.
+            # Both are tried because the two disagree: the native endpoint lists
+            # pulled models the shim does not always surface.
+            status, names = await _fetch_catalog(session, f"{coder_url}/api/tags")
+            if status != 200 or names is None:
+                status, names = await _fetch_catalog(session, f"{coder_url}/v1/models")
+            if status != 200:
+                return ServiceHealth(name="coder", status="unavailable", error=f"HTTP {status}")
+
+            # Nothing to verify, or an unreadable catalog: the server answered,
+            # and reporting "not loaded" without having enumerated anything
+            # would be the same false report pointing the other way.
+            if not model or names is None:
                 return ServiceHealth(name="coder", status="ready")
 
-            # Fall back to OpenAI-compatible endpoint
-            openai_request = session.get(f"{coder_url}/v1/models")
-            openai_resolved = await _resolve_response(openai_request)
-            if hasattr(openai_resolved, "__aenter__"):
-                async with openai_resolved as resp:
-                    if resp.status == 200:
-                        return ServiceHealth(name="coder", status="ready")
+            if not any(model_names_match(model, name) for name in names):
+                _, fallback = await _fetch_catalog(session, f"{coder_url}/v1/models")
+                if fallback is None or not any(model_names_match(model, name) for name in fallback):
                     return ServiceHealth(
-                        name="coder", status="unavailable", error=f"HTTP {resp.status}"
+                        name="coder", status="degraded", error=f"model '{model}' not loaded"
                     )
-
-            resp = openai_resolved
-            if resp.status == 200:
-                return ServiceHealth(name="coder", status="ready")
-            return ServiceHealth(name="coder", status="unavailable", error=f"HTTP {resp.status}")
+            return ServiceHealth(name="coder", status="ready")
     except Exception as e:
         logger.warning(f"Coder health check failed: {e}")
         return ServiceHealth(name="coder", status="unavailable", error=str(e))
@@ -205,6 +212,7 @@ async def get_health_status(
     bundle_dir: str,
     queue_depth: int = 0,
     vlm_model: str | None = None,
+    coder_model: str | None = None,
 ) -> HealthStatus:
     """Get overall system health status.
 
@@ -215,6 +223,7 @@ async def get_health_status(
         queue_depth: Current job queue depth.
         vlm_model: Configured vision model, confirmed present before the VLM is
             reported ``ready``.
+        coder_model: Configured coder model, confirmed the same way.
 
     Returns:
         Overall health status with service details.
@@ -222,7 +231,7 @@ async def get_health_status(
     from datetime import UTC, datetime
 
     vlm_health = await check_vlm_health(vlm_url, model=vlm_model)
-    coder_health = await check_coder_health(coder_url)
+    coder_health = await check_coder_health(coder_url, model=coder_model)
     storage_health = await check_storage_health(bundle_dir)
 
     services = {

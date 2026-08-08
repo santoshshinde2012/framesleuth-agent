@@ -78,9 +78,16 @@ not published), so it never clashes with a native Ollama you may already run on
 Once the API reports healthy (either setup path), go from a video to a Context
 Bundle in three calls — analysis is async (submit → poll → read):
 
+No recording to hand? Generate a throwaway one — it exercises the whole pipeline
+and takes about a second:
+
+```bash
+uv run python scripts/make_sample_video.py     # writes sample.mp4
+```
+
 ```bash
 # 1. Submit any screen recording (mp4/webm). Returns 202 { job_id, ... }
-JOB=$(curl -s -F "video=@bug.mp4" http://127.0.0.1:8010/v1/analyze \
+JOB=$(curl -s -F "video=@sample.mp4" http://127.0.0.1:8010/v1/analyze \
   | python -c "import sys, json; print(json.load(sys.stdin)['job_id'])")
 
 # 2. Poll until state is "done" (queued → running → done)
