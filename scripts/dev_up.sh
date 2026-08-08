@@ -22,7 +22,7 @@ if ! command -v docker >/dev/null 2>&1; then
   echo
   echo "No Docker? Run the agent directly (README → 'Run it directly'):"
   echo "  ollama serve & ; ollama pull qwen2.5vl && ollama pull qwen2.5-coder:7b"
-  echo "  uv venv && source .venv/bin/activate && uv pip install -e \".[dev]\""
+  echo "  uv sync --frozen --extra dev && source .venv/bin/activate"
   echo "  VLM_URL=http://127.0.0.1:11434 VLM_MODEL=qwen2.5vl framesleuth-api"
   exit 1
 fi

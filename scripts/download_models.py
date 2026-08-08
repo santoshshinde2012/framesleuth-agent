@@ -62,7 +62,7 @@ def prefetch_asr(model: str) -> bool:
     try:
         from faster_whisper import WhisperModel
     except ImportError:
-        print('  [skip] faster-whisper not installed — run: uv pip install -e ".[dev]"')
+        print("  [skip] faster-whisper not installed — run: uv sync --frozen --extra dev")
         return False
     try:
         WhisperModel(model, compute_type="int8")  # triggers the one-time download

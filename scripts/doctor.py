@@ -65,7 +65,8 @@ def check_venv(r: Report) -> None:
         r.add(
             WARN,
             "no virtualenv is active",
-            "in the framesleuth dir: uv venv && source .venv/bin/activate",
+            "in the framesleuth dir: uv sync --frozen --extra dev, then "
+            "source .venv/bin/activate",
         )
         return
     p = Path(venv)
@@ -76,8 +77,8 @@ def check_venv(r: Report) -> None:
             FAIL,
             f"active virtualenv points to a MISSING path: {venv}",
             "deactivate 2>/dev/null; unset VIRTUAL_ENV; then recreate it in the "
-            "framesleuth dir: uv venv && source .venv/bin/activate && "
-            'uv pip install -e ".[dev]"',
+            "framesleuth dir: uv sync --frozen --extra dev, then "
+            "source .venv/bin/activate",
         )
 
 
@@ -97,7 +98,7 @@ def check_package(r: Report) -> None:
         r.add(
             FAIL,
             f"framesleuth not importable in this Python: {exc}",
-            'install it: uv pip install -e ".[dev]" (in the active venv)',
+            "install it: uv sync --frozen --extra dev",
         )
 
 
@@ -115,7 +116,7 @@ def check_render(r: Report) -> None:
     else:
         missing = []
         if not pw:
-            missing.append('uv pip install -e ".[render]"')
+            missing.append("uv sync --frozen --extra dev --extra render")
         if not ff:
             missing.append("install ffmpeg on PATH")
         r.add(
@@ -175,7 +176,7 @@ def main() -> int:
     check_tool(
         r,
         "framesleuth-api",
-        "install the package in the active venv: " 'uv pip install -e ".[dev]"',
+        "install the package: uv sync --frozen --extra dev",
     )
     check_tool(r, "framesleuth-mcp", "same as above — comes from the package install")
     check_package(r)

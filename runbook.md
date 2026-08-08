@@ -63,17 +63,17 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 ```bash
 git clone https://github.com/thestackhub1/framesleuth-agent.git
 cd framesleuth-agent
-uv venv && source .venv/bin/activate
-uv pip install -e ".[dev]"
+uv sync --frozen --extra dev
+source .venv/bin/activate
 ```
 
 **Optional extras** (each is a no-op when absent — install only what you need):
 
 | Extra | Install | Enables |
 |---|---|---|
-| `render` | `uv pip install -e ".[render]"` | HTML→video (Playwright + Chromium; `ffmpeg` on PATH) |
-| `ocr` | `uv pip install -e ".[ocr]"` | Dedicated OCR backstop on error frames (needs the `tesseract` binary) |
-| `all` | `uv pip install -e ".[all]"` | dev + render + ocr |
+| `render` | `uv sync --frozen --extra dev --extra render` | HTML→video (Playwright + Chromium; `ffmpeg` on PATH) |
+| `ocr` | `uv sync --frozen --extra dev --extra ocr` | Dedicated OCR backstop on error frames (needs the `tesseract` binary) |
+| `all` | `uv sync --frozen --all-extras` | dev + render + ocr |
 
 ### 2. Configure environment
 
@@ -188,7 +188,7 @@ ollama serve &                                    # skip if already running
 ollama pull qwen2.5vl && ollama pull qwen2.5-coder:7b
 
 # Backend — point the VLM at Ollama (in .env or inline) and start the API
-uv venv && source .venv/bin/activate && uv pip install -e ".[dev]"
+uv sync --frozen --extra dev && source .venv/bin/activate
 VLM_URL=http://127.0.0.1:11434 VLM_MODEL=qwen2.5vl framesleuth-api
 
 # MCP server (launched by your editor; or run standalone over stdio)
@@ -291,8 +291,8 @@ that no longer exists. (`uv` says: *Python interpreter not found at …/.venv/bi
 deactivate 2>/dev/null || true
 unset VIRTUAL_ENV
 cd /path/to/framesleuth          # the agent repo — not the website folder
-uv venv && source .venv/bin/activate
-uv pip install -e ".[dev]"       # add ,render for HTML→video: ".[dev,render]"
+uv sync --frozen --extra dev        # add --extra render for HTML→video
+source .venv/bin/activate
 framesleuth-api                  # now on PATH
 ```
 
@@ -381,7 +381,7 @@ restarted. (Docker bundles it already; this is the direct path.)
 **Fix:**
 ```bash
 # Install the extra into the SAME environment the server runs in:
-uv pip install -e ".[render]"        # or ".[all]" = dev + render
+uv sync --frozen --extra dev --extra render   # or --all-extras
 # ffmpeg must also be on PATH (see above)
 
 # Restart framesleuth-api. Chromium downloads automatically on the first render —

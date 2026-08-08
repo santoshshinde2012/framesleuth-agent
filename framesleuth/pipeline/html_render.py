@@ -15,7 +15,7 @@ Chromium and the ``ffmpeg`` binary. Both imports/lookups are lazy and every
 failure raises :class:`HtmlRenderError` with an actionable message rather than
 crashing the server, so the rest of the agent is unaffected when they're absent.
 
-    uv pip install -e ".[render]"
+    uv sync --frozen --extra dev --extra render
     playwright install chromium     # one-time
     # ffmpeg must be on PATH (brew install ffmpeg / apt-get install ffmpeg)
 """
@@ -244,7 +244,7 @@ def render_availability() -> dict[str, Any]:
     if not info["ready"]:
         steps: list[str] = []
         if not info["playwright"]:
-            steps.append('uv pip install -e ".[render]"')
+            steps.append("uv sync --frozen --extra dev --extra render")
         if not info["chromium"] and not _auto_install_enabled():
             # Only ask for this when the server will NOT do it itself. Auto
             # install is on by default and the README promises "there's no
@@ -339,7 +339,7 @@ def _import_playwright() -> Any:
     except ModuleNotFoundError as exc:
         raise HtmlRenderError(
             "Playwright is not installed in this environment "
-            f'(python: {sys.executable}). Run: uv pip install -e ".[render]" '
+            f"(python: {sys.executable}). Run: uv sync --frozen --extra dev --extra render "
             "then restart the server (Chromium auto-downloads on the first render)."
         ) from exc
     except ImportError as exc:  # installed but broken (e.g. partial/ABI mismatch)

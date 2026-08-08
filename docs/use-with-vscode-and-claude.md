@@ -81,8 +81,8 @@ can present or auto-invoke.
 Install the package so the `framesleuth-mcp` entrypoint resolves:
 
 ```bash
-uv venv && source .venv/bin/activate
-uv pip install -e ".[dev]"
+uv sync --frozen --extra dev
+source .venv/bin/activate
 which framesleuth-mcp          # -> <repo>/.venv/bin/framesleuth-mcp
 ```
 
@@ -361,7 +361,7 @@ the server runs with sensible defaults out of the box.
 
 | Symptom | Fix |
 |---|---|
-| `framesleuth-mcp: command not found` | Activate the venv, `uv pip install -e ".[dev]"`, re-check `which framesleuth-mcp`. |
+| `framesleuth-mcp: command not found` | Activate the venv, `uv sync --frozen --extra dev`, re-check `which framesleuth-mcp`. |
 | Tools don't appear (Copilot) | Use **Agent mode**, and Start + trust the server. |
 | Tools don't appear (Claude) | Use an absolute `command` path; restart the client; `claude mcp list` (CLI). |
 | `get_keyframe_image` returns nothing | Keyframes exist only after a **full-mode** analysis. |

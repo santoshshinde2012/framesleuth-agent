@@ -163,7 +163,7 @@ audio transcript (`asr`) stage contributes too.
 > Common gotcha: `command not found: framesleuth-api` or a `uv pip install` error
 > about a missing interpreter means your active venv was deleted/moved. Fix it
 > from the **framesleuth** directory:
-> `deactivate; unset VIRTUAL_ENV; uv venv && source .venv/bin/activate && uv pip install -e ".[dev]"`.
+> `deactivate; unset VIRTUAL_ENV; uv sync --frozen --extra dev; source .venv/bin/activate`.
 
 **Stop**
 
@@ -255,7 +255,7 @@ separate `playwright install chromium` step:
 
 ```bash
 # In the same environment the server runs in:
-uv pip install -e ".[render]"        # or ".[all]" = dev + render
+uv sync --frozen --extra dev --extra render   # or --all-extras
 # ffmpeg must be on PATH (brew install ffmpeg / apt-get install ffmpeg)
 
 # Restart framesleuth-api, then verify (Chromium fetches itself on first render):
@@ -267,7 +267,7 @@ Set `FRAMESLEUTH_AUTO_INSTALL_BROWSER=0` to disable the auto-download and run
 `playwright install chromium` yourself (e.g. in a locked-down environment).
 
 > **Other optional extra — `ocr`.** For the dedicated OCR backstop on error frames,
-> `uv pip install -e ".[ocr]"` and put the `tesseract` binary on PATH
+> `uv sync --frozen --extra dev --extra ocr` and put the `tesseract` binary on PATH
 > (`brew install tesseract` / `apt-get install tesseract-ocr`). It's a no-op when
 > absent — the VLM still does OCR; the backstop only adds a second reading. Use
 > `".[all]"` for dev + render + ocr.
