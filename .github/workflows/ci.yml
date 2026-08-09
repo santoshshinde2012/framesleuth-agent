@@ -78,6 +78,49 @@ jobs:
       - name: OpenAPI schema is current
         run: uv run python scripts/export_openapi.py --check --out openapi.json
 
+  # `docker compose up` is the first thing the README tells you to run, and
+  # nothing here ever built it. A compose file that fails to parse, or an image
+  # that no longer starts, would reach users as a broken quickstart with a green
+  # tick on the commit that broke it. That has already happened once.
+  image:
+    name: Docker image & compose
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # Both files: the override adds Ollama and is what plain `docker compose
+      # up` loads, while the base file alone is the documented path for running
+      # against a native model server.
+      - name: Compose files parse
+        run: |
+          docker compose config -q
+          docker compose -f docker-compose.yml config -q
+
+      # INSTALL_RENDER=false skips the ~150 MB Chromium download. It exercises
+      # the uv.lock install and the runtime stage, which is what breaks; the
+      # render extra is covered by the render tests.
+      - name: Build
+        run: docker build --build-arg INSTALL_RENDER=false -t framesleuth-agent:ci .
+
+      # Building is not starting. The container has to answer on the port it
+      # publishes, or the quickstart is still broken.
+      - name: Container serves /v1/healthz
+        run: |
+          docker run -d --name fs -p 8000:8000 framesleuth-agent:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/v1/healthz >/dev/null 2>&1; then
+              echo "healthz responded after ${i}0s"
+              docker rm -f fs >/dev/null
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "container never served /v1/healthz"
+          docker logs fs
+          docker rm -f fs >/dev/null
+          exit 1
+
   security:
     name: Dependency & secret scan
     runs-on: ubuntu-latest
