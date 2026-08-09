@@ -1,6 +1,6 @@
 # Framesleuth Runbook
 
-**Setup, health checks, troubleshooting, and common operational tasks.**
+Setup, health checks, troubleshooting, and common operational tasks.
 
 ---
 
@@ -67,7 +67,7 @@ uv sync --frozen --extra dev
 source .venv/bin/activate
 ```
 
-**Optional extras** (each is a no-op when absent — install only what you need):
+Optional extras. Each is a no-op when absent, so install only what you need:
 
 | Extra | Install | Enables |
 |---|---|---|
@@ -84,8 +84,8 @@ nano .env
 ```
 
 Key settings:
-- `VLM_URL` / `VLM_MODEL`: the vision model endpoint (defaults to native Ollama
-  `http://127.0.0.1:11434` + `qwen2.5vl`; point at llama.cpp/vLLM to swap engines)
+- `VLM_URL` / `VLM_MODEL`: the vision model endpoint. Defaults to native Ollama
+  (`http://127.0.0.1:11434` + `qwen2.5vl`); point it at llama.cpp or vLLM to swap engines
 - Storage paths (`BUNDLE_DIR`, `DATABASE_PATH`) and retention (`BUNDLE_TTL_DAYS`)
 - Concurrency + safety limits (`MAX_CONCURRENT_JOBS`, `JOB_TIMEOUT_S`)
 - Security (`API_TOKEN`, `CHROME_EXTENSION_IDS`, `WEB_ORIGINS`)
@@ -106,12 +106,12 @@ python -c "from framesleuth.config import get_settings; s = get_settings(); s.va
 python scripts/download_models.py
 ```
 
-This script **pre-fetches the faster-whisper ASR model** (the only weight
-Framesleuth downloads itself) and then **checks that your VLM and coder servers
-are reachable**, printing the exact `ollama pull ...` command for anything that's
-missing. It does **not** download the vision/coder LLMs — those are served by your
-engine. Useful flags: `--skip-asr`, `--asr-model <size>`, `--strict` (exit non-zero
-if a prerequisite is missing, e.g. for CI).
+This pre-fetches the faster-whisper ASR model, the only weight Framesleuth
+downloads itself. It then checks that your VLM and coder servers are reachable and
+prints the exact `ollama pull ...` command for anything missing. It does not fetch
+the vision or coder LLMs; your engine serves those. Useful flags: `--skip-asr`,
+`--asr-model <size>`, `--strict` (exit non-zero if a prerequisite is missing, e.g.
+for CI).
 
 Fetch the LLMs via the engine you use:
 - VLM (llama.cpp): `llama-server -hf Qwen/Qwen3-VL-8B-Instruct-GGUF ...` (pulls on first run)
@@ -122,7 +122,7 @@ Fetch the LLMs via the engine you use:
 
 ### What gets downloaded
 
-Default (Ollama) — pulled automatically by `docker compose up`, or via `ollama pull`:
+Default (Ollama), pulled automatically by `docker compose up` or via `ollama pull`:
 
 | Model | Size | Purpose | Where |
 |---|---|---|---|
@@ -130,8 +130,9 @@ Default (Ollama) — pulled automatically by `docker compose up`, or via `ollama
 | `qwen2.5-coder:7b` | ~5GB | Code fixing (coder) | Ollama store |
 | faster-whisper (`small`) | ~0.5GB | Speech-to-text | `~/.cache/huggingface/` |
 
-**Total: ~11–12GB.** Alternative (llama.cpp): `Qwen3-VL-8B-Instruct-GGUF` (~8GB) +
-its `mmproj` (~2GB) under `~/.cache/huggingface/`, pulled on first `llama-server` run.
+Total: ~11–12GB. With llama.cpp instead, it's `Qwen3-VL-8B-Instruct-GGUF` (~8GB)
+plus its `mmproj` (~2GB) under `~/.cache/huggingface/`, pulled on the first
+`llama-server` run.
 
 ---
 
@@ -143,17 +144,17 @@ its `mmproj` (~2GB) under `~/.cache/huggingface/`, pulled on first `llama-server
 docker compose up          # or: ./scripts/dev_up.sh  (run it, don't `source` it)
 ```
 
-This brings up three services with **no manual steps**:
+That brings up three services with no manual steps:
 
-1. `ollama` — the local model server (healthchecked).
-2. `ollama-init` — a one-shot container that pulls `qwen2.5vl` + `qwen2.5-coder:7b`
+1. `ollama`, the local model server (healthchecked).
+2. `ollama-init`, a one-shot container that pulls `qwen2.5vl` + `qwen2.5-coder:7b`
    (~11 GB on first run) into a named volume, then exits.
-3. `backend` — the Framesleuth API on `http://127.0.0.1:8010`, started only once
+3. `backend`, the Framesleuth API on `http://127.0.0.1:8010`, started only once
    the models are ready (`depends_on: service_completed_successfully`).
 
-The Ollama pieces live in `docker-compose.override.yml`, which Docker Compose
-loads automatically. The base `docker-compose.yml` is backend-only for users who
-want to point the API container at native or external model servers.
+The Ollama pieces live in `docker-compose.override.yml`, which Compose loads
+automatically. The base `docker-compose.yml` is backend-only, for pointing the API
+container at native or external model servers.
 
 ```bash
 curl -s http://127.0.0.1:8010/v1/healthz | python -m json.tool   # status: healthy
@@ -161,15 +162,15 @@ docker compose logs -f                  # watch the model download / startup
 docker compose down --remove-orphans    # stop  (add -v to also delete model volumes)
 ```
 
-The compose Ollama runs on the internal network only (its port is **not**
-published), so it won't collide with a native Ollama on `:11434`. The only host
-port is the API on `:8010`. If you already run Ollama natively with the models,
-prefer **Option B** below — it reuses them instead of downloading a second copy.
+The compose Ollama's port isn't published, so it can't collide with a native
+Ollama on `:11434`, and the API on `:8010` is the only host port. Already running
+Ollama natively with the models? Use Option B below instead; it reuses them rather
+than downloading a second copy.
 
-It's **CPU-only** under Docker (incl. Docker on macOS, which can't use the Mac
-GPU), so the vision model is slow there — for speed on macOS use **Option B**
-(native Ollama). For an **NVIDIA GPU** on Linux, uncomment the `deploy:` block on
-the `ollama` service in `docker-compose.override.yml`.
+Docker is CPU-only here, including on macOS, where it can't reach the Mac GPU, so
+the vision model is slow. For speed on macOS use Option B (native Ollama). For an
+NVIDIA GPU on Linux, uncomment the `deploy:` block on the `ollama` service in
+`docker-compose.override.yml`.
 
 To run only the backend container against native Ollama:
 
@@ -195,10 +196,10 @@ VLM_URL=http://127.0.0.1:11434 VLM_MODEL=qwen2.5vl framesleuth-api
 framesleuth-mcp
 ```
 
-> The vision model is engine-agnostic — it only needs an OpenAI-compatible
-> `/v1/chat/completions` endpoint that accepts images, which Ollama provides. Set
-> `VLM_URL`/`VLM_MODEL` to point at it. Without a reachable VLM the `understand`
-> stage degrades and the bundle relies on browser sidecars.
+> The vision model is engine-agnostic. It needs an OpenAI-compatible
+> `/v1/chat/completions` endpoint that accepts images, which Ollama provides; point
+> `VLM_URL`/`VLM_MODEL` at it. Without a reachable VLM the `understand` stage
+> degrades and the bundle falls back on browser sidecars.
 
 ---
 
@@ -228,12 +229,13 @@ Expected response (all services up):
 }
 ```
 
-The `render` block reports readiness of the optional HTML→video capability in the
-running process. `/v1/healthz` is public (never token-gated, so a client can tell
-"backend down" from "backend needs a token"), so it always blanks `python` and
-`hint` rather than publish the server's filesystem layout to an unauthenticated
-caller. For those two fields, ask `/v1/version` — which **is** covered by the
-token gate when `API_TOKEN` is set:
+The `render` block reports whether the optional HTML→video capability can run in
+this process.
+
+`/v1/healthz` is never token-gated, so a client can tell "backend down" from
+"backend needs a token". It also always blanks `python` and `hint` rather than
+hand the server's filesystem layout to an unauthenticated caller. For those two
+fields ask `/v1/version`, which is token-gated when `API_TOKEN` is set.
 
 ```bash
 curl -s http://127.0.0.1:8010/v1/version | python -m json.tool
@@ -241,18 +243,19 @@ curl -s http://127.0.0.1:8010/v1/version | python -m json.tool
 curl -s -H "Authorization: Bearer $API_TOKEN" http://127.0.0.1:8010/v1/version
 ```
 
-`queue_depth` reflects the number of jobs currently queued or running (bounded by
-`MAX_CONCURRENT_JOBS`).
+`queue_depth` counts jobs queued or running. `MAX_CONCURRENT_JOBS` bounds how many
+of those actually run; `MAX_QUEUED_JOBS` (default 32) bounds the total, past which
+`/v1/analyze` returns `429`.
 
-Without the model servers running you'll instead see `"status": "unhealthy"`
-with `vlm`/`coder` reporting `"status": "unavailable"` and `storage: ready`.
-That is expected — analysis still runs in degraded (sidecar-only) mode, and the
-resulting bundle's `analysis_quality` records what was skipped.
+With no model servers running you get `"status": "unhealthy"` instead, `vlm` and
+`coder` reporting `"status": "unavailable"` while `storage` stays `ready`. That's
+expected. Analysis still runs in degraded, sidecar-only mode, and the bundle's
+`analysis_quality` records what was skipped.
 
-If the server is up but has not pulled `VLM_MODEL`, `vlm` reports
-`"status": "degraded"` with `"error": "model '<name>' not loaded"` and the overall
-status is `degraded`. Fix it with `ollama pull <name>` — restarting the server
-will not help, because the server was never the problem.
+If the server is up but hasn't pulled `VLM_MODEL`, `vlm` reports
+`"status": "degraded"` with `"error": "model '<name>' not loaded"`, and the overall
+status is `degraded`. Run `ollama pull <name>`. Restarting the server won't help,
+because the server was never the problem.
 
 ### Model servers
 
@@ -266,27 +269,29 @@ curl http://127.0.0.1:8080/v1/models
 
 ### MCP server
 
+The MCP server logs to stderr, which your editor captures in its MCP output pane.
+To read it yourself, run the server over stdio:
+
 ```bash
-# Check logs
-tail -f .framesleuth-mcp.log
+LOG_LEVEL=DEBUG framesleuth-mcp
 ```
 
 ---
 
 ## Common issues
 
-> **First, run the doctor.** `python3 scripts/doctor.py` checks your whole local
+> **First, run the doctor.** `python3 scripts/doctor.py` checks the whole local
 > setup (venv, PATH, package import, ffmpeg/render prerequisites, backend + model
-> servers) and prints a one-line fix for each problem. It uses only the standard
-> library, so it runs with a plain `python3` even when the virtualenv is broken.
+> servers) and prints a one-line fix for each problem. It's pure standard library,
+> so it runs under a plain `python3` even when the virtualenv is the broken part.
 
 ### Issue: `command not found: framesleuth-api` / `uv pip install` can't find the interpreter
 
-**Cause:** Your shell has a virtualenv "active" (the `(framesleuth)` prefix) whose
-directory was deleted or moved — so the console scripts and `uv` point at a Python
-that no longer exists. (`uv` says: *Python interpreter not found at …/.venv/bin/python3*.)
+Cause: your shell has a virtualenv "active" (the `(framesleuth)` prefix) whose
+directory was deleted or moved, so the console scripts and `uv` point at a Python
+that no longer exists. `uv` says: *Python interpreter not found at …/.venv/bin/python3*.
 
-**Fix:** drop the dead venv and recreate it **in the framesleuth directory**:
+Fix: drop the dead venv and recreate it in the framesleuth directory.
 ```bash
 deactivate 2>/dev/null || true
 unset VIRTUAL_ENV
@@ -298,25 +303,24 @@ framesleuth-api                  # now on PATH
 
 ### Issue: `docker compose up` → "Bind for 0.0.0.0:11434 failed: port is already allocated" or "orphan containers"
 
-**Cause:** something else already owns a port (commonly a **native Ollama** on
-`:11434`, or **leftover containers from an older version** of this compose file).
+Cause: something else already owns a port. Usually that's a native Ollama on
+`:11434`, or leftover containers from an older version of this compose file.
 
-**Fix:** the current compose no longer publishes Ollama's port, so update + clean up:
+Fix: the current compose no longer publishes Ollama's port, so update and clean up.
 ```bash
 git pull                                   # get the current docker-compose.yml
 docker compose down --remove-orphans       # remove old/renamed containers
 docker compose up -d --remove-orphans
 ```
-If you already run Ollama natively with the models, skip Docker entirely and use
-**Option B** (run it directly) — it reuses your existing Ollama. The only host
-port the stack needs is the API on `:8010`; if `:8010` is taken, change the left
-side of `"8010:8000"` in `docker-compose.yml`.
+If you already run Ollama natively with the models, skip Docker and use Option B,
+which reuses it. The stack needs one host port, the API on `:8010`. If that's
+taken, change the host port in `"127.0.0.1:8010:8000"` in `docker-compose.yml`.
 
 ### Issue: "VLM server not responding (503)"
 
-**Cause:** llama.cpp not running or model not loaded.
+Cause: llama.cpp not running or model not loaded.
 
-**Fix:**
+Fix:
 ```bash
 # Check if running
 lsof -i :8080
@@ -328,9 +332,9 @@ llama-server ... --n-gpu-layers 99 -c 32768 --port 8080
 
 ### Issue: "Coder unavailable (503)"
 
-**Cause:** Ollama not running or model not pulled.
+Cause: Ollama not running or model not pulled.
 
-**Fix:**
+Fix:
 ```bash
 # Check if running
 pgrep ollama || OLLAMA_KEEP_ALIVE=-1 ollama serve
@@ -341,26 +345,26 @@ ollama pull qwen2.5-coder:7b
 
 ### Issue: "Upload too large (413)"
 
-**Cause:** Video exceeds `MAX_UPLOAD_MB` limit.
+Cause: video exceeds the `MAX_UPLOAD_MB` limit.
 
-**Fix:**
-- Increase limit in `.env` (`MAX_UPLOAD_MB=1024`)
+Fix:
+- Increase the limit in `.env` (`MAX_UPLOAD_MB=1024`)
 - Or record shorter videos
 
 ### Issue: "Out of memory (OOM)"
 
-**Cause:** Models competing for VRAM.
+Cause: models competing for VRAM.
 
-**Fix:**
+Fix:
 - Reduce `MAX_CONCURRENT_JOBS` in `.env` (default 2)
-- Use smaller quant (8B instead of 13B)
+- Use a smaller quant (8B instead of 13B)
 - Enable GPU offloading with `--n-gpu-layers 99`
 
 ### Issue: "FFmpeg: No such file"
 
-**Cause:** ffmpeg not installed or not on PATH.
+Cause: ffmpeg not installed or not on PATH.
 
-**Fix:**
+Fix:
 ```bash
 # Install
 brew install ffmpeg  # macOS
@@ -372,13 +376,14 @@ ffmpeg -version
 
 ### Issue: HTML→video "Playwright is not installed" (or `503` from `/v1/render-html`)
 
-**Why optional?** Playwright is an optional `[render]` extra — it pulls a ~150 MB
-Chromium browser the core pipeline doesn't need, so it isn't a core dependency.
-The error means the extra isn't in **the process the server runs** — usually the
-server is a different environment than the one you installed into, or it wasn't
-restarted. (Docker bundles it already; this is the direct path.)
+Why is it optional? Playwright drags in a ~150 MB Chromium build the core pipeline
+never touches, so it sits behind the `[render]` extra.
 
-**Fix:**
+The error means the extra isn't installed in the process the server runs in.
+Usually that server is a different environment from the one you installed into, or
+it wasn't restarted. Docker already bundles it; this is the direct path.
+
+Fix:
 ```bash
 # Install the extra into the SAME environment the server runs in:
 uv sync --frozen --extra dev --extra render   # or --all-extras
@@ -390,10 +395,10 @@ curl -s http://127.0.0.1:8010/v1/healthz | python -m json.tool
 # → "render": {"playwright": true, "ffmpeg": true, ...}  (chromium flips true after first render)
 ```
 
-If `render.playwright` is still `false`, the server is the wrong environment.
-Ask **`/v1/version`** which interpreter it uses — `/v1/healthz` is public and so
-strips `python` and `hint` rather than publish the deployment layout to an
-unauthenticated caller:
+If `render.playwright` is still `false`, the server is the wrong environment. Ask
+`/v1/version` which interpreter it uses. `/v1/healthz` is public, so it strips
+both `python` and `hint` rather than hand the deployment layout to an
+unauthenticated caller.
 
 ```bash
 curl -s http://127.0.0.1:8010/v1/version | python -m json.tool
@@ -425,7 +430,7 @@ pytest tests/ -v   # the integration/e2e markers are declared but not yet used
 
 ### Create a fixture report (end-to-end)
 
-Analysis is **asynchronous**: `POST /v1/analyze` returns `202` with a `job_id`
+Analysis is asynchronous. `POST /v1/analyze` returns `202` with a `job_id`
 immediately and runs the pipeline in the background. Poll `/v1/jobs/{id}` until
 `state` is `done`, then read the bundle.
 
@@ -448,7 +453,7 @@ curl -s http://127.0.0.1:8010/v1/report/$JOB | python -m json.tool
 > (`idempotent: true`) without re-running. Use a different file, or clear the
 > scratch store (`rm -rf bug-reports/*`) to force a fresh run.
 
-**Follow progress without polling (SSE), or cancel a run:**
+Follow progress without polling (SSE), or cancel a run:
 
 ```bash
 # Stream live progress until the job is done/failed/cancelled:
@@ -458,8 +463,9 @@ curl -N http://127.0.0.1:8010/v1/jobs/$JOB/events
 curl -X DELETE http://127.0.0.1:8010/v1/jobs/$JOB        # -> {state, cancel_requested: true}
 ```
 
-Set `WEBHOOK_URL` in `.env` to have the backend POST a compact `{id, state, title,
-action}` payload to your endpoint when a job finishes — no polling needed.
+Set `WEBHOOK_URL` in `.env` and the backend POSTs `{id, state, source_video,
+error}` to your endpoint when a job finishes, plus `title` and `action` once a
+bundle exists. No polling needed.
 
 Prefer a GUI? Import the Postman collection in [`postman/`](postman/README.md).
 
@@ -469,13 +475,13 @@ Prefer a GUI? Import the Postman collection in [`postman/`](postman/README.md).
 
 ### Backend logs
 
-**Real-time:**
+Real-time:
 ```bash
 docker compose logs -f    # or watch the terminal running framesleuth-api
 # or in the backend terminal
 ```
 
-**Per-job:**
+Per-job:
 ```bash
 # After a job completes, check:
 cat bug-reports/{job-id}/bundle.json
@@ -484,12 +490,12 @@ cat bug-reports/{job-id}/metrics.json
 
 ### Model server logs
 
-**llama.cpp:**
+llama.cpp:
 ```bash
 # Logs to stdout; check terminal where llama-server started
 ```
 
-**Ollama:**
+Ollama:
 ```bash
 # macOS: ~/Library/Application Support/Ollama/logs
 # Linux: ~/.ollama/logs
@@ -542,6 +548,6 @@ GROUNDING_MAX_FILES=5000   # Cap the workspace scan so large monorepos stay boun
 
 ## Next steps
 
-- [Capabilities](docs/capabilities.md) — full reference for inputs, outputs, endpoints, and MCP tools
-- [Use with VS Code & Claude (MCP)](docs/use-with-vscode-and-claude.md) — connect an MCP client
-- [Postman Collection](postman/README.md) — exercise the HTTP API end-to-end
+- [Capabilities](docs/capabilities.md): full reference for inputs, outputs, endpoints, and MCP tools
+- [Use with VS Code & Claude (MCP)](docs/use-with-vscode-and-claude.md): connect an MCP client
+- [Postman Collection](postman/README.md): exercise the HTTP API end-to-end

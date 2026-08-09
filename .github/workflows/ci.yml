@@ -35,15 +35,12 @@ jobs:
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
 
-      # `--frozen` against a committed uv.lock, not `uv pip install -e ".[dev]"`.
-      # That re-resolved every dependency on every run, so a green build could go
-      # red overnight with no commit behind it, and an upstream release — broken
-      # or hostile — landed here with nothing to review. It also meant nobody
-      # could reproduce a CI failure locally, because "the same install" was a
-      # different set of versions each time.
+      # Install from the lock, never re-resolve. Without this a green build can
+      # go red overnight with no commit behind it, and CI failures stop being
+      # reproducible locally.
       #
-      # `uv lock --check` first so a pyproject edit that was never re-locked
-      # fails loudly here rather than being silently ignored by the sync.
+      # The check runs first so a pyproject edit that was never re-locked fails
+      # here instead of being ignored by the sync.
       - name: Check the lockfile is current
         run: uv lock --check
 
@@ -93,41 +90,26 @@ jobs:
         with:
           enable-cache: true
 
-      # Audit the LOCKED set — the versions this project actually installs.
-      # Re-resolving here meant pip-audit scanned a dependency set that existed
-      # nowhere else: a clean report proved nothing about what CI ran or what a
-      # contributor got, and a real advisory against a pinned version could be
-      # missed because the scan silently resolved past it.
-      #
-      # pip-audit comes via `--with` so the tool is available without being
-      # added to, or perturbing, the environment being audited.
+      # Audit the locked set, not a fresh resolve, or the report says nothing
+      # about what actually ships. pip-audit comes in via `--with` so it does
+      # not perturb the environment it is auditing.
       - name: Install project (locked)
         run: uv sync --frozen --extra dev
 
       # Known-vulnerable dependencies. Reported but non-blocking: an advisory in
       # a transitive dep should surface immediately, not gate an unrelated fix.
       #
-      # Because it never fails the build, the output only helps if someone reads
-      # it. Against the committed uv.lock (90 packages, checked 2026-08-09) it
-      # reports three findings, all in DEV tooling and all triaged as
-      # unreachable here — recorded so the next reader compares against this
-      # list instead of re-deriving it:
+      # Nothing in the runtime set carries an advisory. As of 2026-08-09 it
+      # reports three, all dev tooling and all unreachable here. Listed so you
+      # can tell a new finding from the usual noise:
       #
-      #   black 23.12.0  GHSA-3936-cmfr-pm3m (HIGH)  needs attacker control of
-      #                  --python-cell-magics; we never pass that option, and
-      #                  black runs as `black --check framesleuth tests`.
-      #   black 23.12.0  GHSA-fj7x-q9j7-g6q6 (MED)   ReDoS on hostile source.
-      #   pytest 7.4.3   GHSA-6w46-j5rx-g56g (MED)   local tmpdir permissions.
+      #   black 23.12.0  GHSA-3936-cmfr-pm3m  needs --python-cell-magics, unused
+      #   black 23.12.0  GHSA-fj7x-q9j7-g6q6  ReDoS on hostile source
+      #   pytest 7.4.3   GHSA-6w46-j5rx-g56g  local tmpdir permissions
       #
-      # NOTHING in the runtime dependency set carries an advisory. The two
-      # setuptools findings that used to be here went away with the lockfile —
-      # they came from the ambient build environment the old unpinned install
-      # happened to resolve, which is its own small argument for pinning.
-      #
-      # Deliberately NOT auto-upgraded: the fix for the black findings is 26.3.1,
-      # which reformats the entire codebase. A repo-wide diff to close an
-      # unreachable advisory buys nothing and buries real changes. Anything that
-      # appears here and is NOT on this list deserves a look.
+      # Not upgrading black for these: the fix is 26.3.1, which reformats the
+      # whole codebase. Anything appearing here that is not on this list is
+      # worth a look.
       - name: pip-audit
         run: uv run --with pip-audit pip-audit --skip-editable || true
 

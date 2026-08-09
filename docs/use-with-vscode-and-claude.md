@@ -1,33 +1,33 @@
 # Use Framesleuth from VS Code Copilot & Claude (MCP)
 
-Framesleuth ships an MCP server (`framesleuth-mcp`, server name **`framesleuth`**)
-that lets an AI agent analyze a bug video and act on the result — all over the
-Model Context Protocol. This page is the **client setup reference** for the three
-common agents:
+Framesleuth ships an MCP server (`framesleuth-mcp`, server name `framesleuth`)
+that lets an AI agent analyze a bug video and act on the result over the Model
+Context Protocol. This page is the client setup reference for three common
+agents:
 
-- **VS Code + GitHub Copilot** (agent mode)
-- **Claude Code** (CLI)
-- **Claude Desktop**
+- VS Code + GitHub Copilot (agent mode)
+- Claude Code (CLI)
+- Claude Desktop
 
-> This page focuses on **connecting each client**, then driving it (§4) and a
-> copy/paste end-to-end test (§5). For setup, health checks, and troubleshooting
-> of the analysis backend, see [runbook.md](../runbook.md).
+> This page covers connecting each client, driving it (§4), and a copy/paste
+> end-to-end test (§5). Backend setup, health checks and troubleshooting live
+> in [runbook.md](../runbook.md).
 
 ---
 
 ## What the `framesleuth` server exposes
 
-Everything is **read-only** over the workspace and the bundle directory — the
-server never edits files. Edits happen through the editor/agent's own reviewed
-apply flow.
+The server is read-only over your workspace and never edits your files. New
+reports and rendered artifacts land under the bundle directory. Code edits go
+through the editor/agent's own reviewed apply flow.
 
 | Kind | Name | Purpose |
 |---|---|---|
 | tool | `analyze_video(path, repo_root?, intent?, skill?, system_prompt?, action?, action_prompt?)` | Run the full pipeline on a local video; returns the report `id`, the resolved `action`, the `suggested_actions` menu, and `summary_resource`/`fix_prompt_resource` URIs. Pass `repo_root` to ground errors to code, `intent` to steer the work, `skill` for a summary style, and `action` (or `action_prompt`) to shape what the agent should do (see §A). |
 | tool | `list_skills()` | List built-in summary skills (names + descriptions) |
-| tool | `list_actions()` | List built-in **action modes** (`fix`, `implement`, `design`, `summarize`, `explain`, `triage`, `test`, `report`, `reproduce`) |
+| tool | `list_actions()` | List built-in action modes (`fix`, `implement`, `design`, `summarize`, `explain`, `triage`, `test`, `report`, `reproduce`) |
 | tool | `list_reports()` | List available report ids |
-| tool | `get_report(report_id, view?)` | The Context Bundle. `view="slim"` returns the action-relevant subset (typed as an enum, so a client rejects a typo rather than silently handing back the full bundle) for small context windows; `view="full"` (default) returns everything. |
+| tool | `get_report(report_id, view?)` | The Context Bundle. `view="slim"` returns the action-relevant subset for small context windows; `view="full"` (default) returns everything. It's a typed enum, so typos are rejected, not silently widened to the full bundle. |
 | tool | `get_suggested_actions(report_id)` | Machine-readable next-step menu (`action`/`label`/`rationale`/`ref`) |
 | tool | `get_repro_steps(report_id)` | Numbered, cited reproduction steps |
 | tool | `get_error_evidence(report_id)` | Timestamped console/OCR/network errors |
@@ -35,44 +35,44 @@ apply flow.
 | tool | `get_keyframe_image(report_id, index)` | A decoded failure frame (PNG) |
 | tool | `get_video_gif(report_id, fps?, width?, start?, end?)` | An animated GIF preview of the recording (cached on disk) |
 | tool | `locate_in_code(report_id, repo_root?)` | Ranked candidate files/lines in the repo |
-| tool | `render_html_video(html, format, duration_s, fps, width, height)` | Render a self-contained HTML/CSS/JS animation to mp4/gif/webm — frame-by-frame, full colour. Needs the `render` extra. |
-| `render(report_id, format)` | Render the report as `markdown`, `issue` (GitHub issue text), or `test-plan` |
+| tool | `render_html_video(html, format, duration_s, fps, width, height)` | Render a self-contained HTML/CSS/JS animation to mp4/gif/webm, frame-by-frame and full colour. Needs the `render` extra. |
+| tool | `render(report_id, format)` | Render the report as `markdown`, `issue` (GitHub issue text), or `test-plan` |
 | resource | `framesleuth://report/{id}/summary` | Concise human summary + `suggested_actions` |
-| resource | `framesleuth://report/{id}/fix-prompt` | Intent- and **action**-aware, evidence-only action prompt |
+| resource | `framesleuth://report/{id}/fix-prompt` | Intent- and action-aware, evidence-only action prompt |
 | resource | `framesleuth://report/{id}/markdown` | Shareable markdown report |
 | resource | `framesleuth://report/{id}/issue` | GitHub-issue text (title + labels + body) |
 | prompt | `fix_from_video(report_id)` | Same action prompt, as an MCP prompt |
 
-The `fix-prompt` leads with an **Analysis confidence** block derived from
-`analysis_quality` (`full` / `partial` / `degraded`): on a degraded run it tells
-the agent *not* to fabricate and to gather more evidence, so a thin recording is
-never mistaken for "nothing is wrong."
+The `fix-prompt` leads with an Analysis confidence block derived from
+`analysis_quality` (`full` / `partial` / `degraded`). On a degraded run it tells
+the agent *not* to fabricate, and to gather more evidence, so a thin recording
+isn't mistaken for "nothing is wrong."
 
 ### A. Action modes — what the agent should *do*
 
-Skills shape the **summary** prose; **actions** shape the **fix-prompt's task** —
-i.e. what a coding agent is told to do with the evidence. Pick one with the
-`action` param, or pass a fully custom `action_prompt`.
+Skills shape the summary prose. Actions shape the fix-prompt's task: what a
+coding agent gets told to do with the evidence. Pick one with the `action`
+param, or pass a fully custom `action_prompt`.
 
 | Action | The agent is told to… |
 |---|---|
 | `fix` | Diagnose the root cause and propose/make a minimal, targeted fix |
 | `implement` | Build or extend the feature shown, using the build context as a spec |
-| `design` | Propose a UI/component/data design from what was shown — no code yet |
-| `summarize` | Summarize/analyze any video — overview, key moments, takeaways |
-| `explain` | Explain what happened — no code changes |
-| `triage` | Assess severity/priority and route to a component — no fix |
+| `design` | Propose a UI/component/data design from what was shown; no code yet |
+| `summarize` | Summarize/analyze any video: overview, key moments, takeaways |
+| `explain` | Explain what happened, without code changes |
+| `triage` | Assess severity/priority and route to a component, no fix |
 | `test` | Write a failing regression test that reproduces it |
 | `report` | Produce a ready-to-paste issue/PR description |
 | `reproduce` | Produce minimal exact steps / a script to reproduce locally |
 
-**Default = auto-pick from classification:** with no `action`, a `bug` →
-`fix`, `tutorial`/`demo` → `explain`, `feedback` → `report`, a general
-(`other`) video → `summarize`. The resolved action
-is stored on the report and drives the `fix-prompt`, so re-reading it later is
-consistent. `get_suggested_actions` returns a menu of follow-ups (propose a fix,
-write a test, open an issue, re-record with logs on a degraded run) that an agent
-can present or auto-invoke.
+With no `action`, the mode is auto-picked from the classification: `bug` →
+`fix`, `feature` → `implement`, `tutorial`/`demo` → `explain`, `feedback` →
+`report`, and a general (`other`) video → `summarize`. The resolved action is
+stored on the report and drives the `fix-prompt`, so it stays consistent on a
+re-read. `get_suggested_actions` returns a menu of follow-ups (propose a
+fix, write a test, open an issue, re-record with logs on a degraded run) that an
+agent can present or auto-invoke.
 
 ---
 
@@ -86,33 +86,30 @@ source .venv/bin/activate
 which framesleuth-mcp          # -> <repo>/.venv/bin/framesleuth-mcp
 ```
 
-Two environment variables point the server at the report store (the **same**
-`bug-reports/` the HTTP backend writes to, so reports from either path show up):
+Two environment variables point the server at the report store. It's the same
+`bug-reports/` the HTTP backend writes to, so reports from either path show up:
 
 - `BUNDLE_DIR` → e.g. `<repo>/bug-reports`
 - `DATABASE_PATH` → e.g. `<repo>/bug-reports/jobs.db`
 
-> **Absolute paths (important):** MCP configs do **not** expand `~` or
-> `${workspaceFolder}` — *except* VS Code's **workspace** `mcp.json`. A
-> `${workspaceFolder}` command added at **user/global** scope (or in Cursor /
-> Claude Desktop / Claude Code) is passed through literally and fails with
-> `spawn ${workspaceFolder}/.venv/bin/framesleuth-mcp ENOENT`. Use an absolute
-> path everywhere else. To get a guaranteed-correct, copy-pasteable config for
-> any client, run (in the activated venv):
+> **Use absolute paths.** MCP configs don't expand `~` or `${workspaceFolder}`;
+> the one exception is VS Code's workspace `mcp.json`. Anywhere else
+> (user/global scope, Cursor, Claude Desktop, Claude Code) it's passed through
+> literally and fails with
+> `spawn ${workspaceFolder}/.venv/bin/framesleuth-mcp ENOENT`. For a
+> copy-pasteable config, run this in the activated venv:
 >
 > ```bash
 > framesleuth-mcp --print-config
 > ```
 >
-> It resolves the absolute path to `framesleuth-mcp` and prints the right config
-> for Claude Desktop / Cursor (`mcpServers`), VS Code (`servers`), and the
-> `claude mcp add` CLI.
+> It resolves the absolute path and prints configs for Claude Desktop / Cursor
+> (`mcpServers`), VS Code (`servers`), and the `claude mcp add` CLI.
 
 ### Smoke-test the server before wiring a client
 
-Confirm the server starts and registers its tools/resources/prompt without
-needing a client — this isolates "the server is broken" from "the client config
-is wrong":
+Confirm the server starts and registers its tools, resources and prompt with no
+client attached. It separates "server is broken" from "client config is wrong":
 
 ```bash
 python - <<'PY'
@@ -134,20 +131,21 @@ Expected: 14 tools (`analyze_video`, `list_skills`, `list_actions`,
 `get_error_evidence`, `get_timeline`, `get_keyframe_image`, `get_video_gif`,
 `locate_in_code`, `render`, `render_html_video`), 4 resources, and the
 `fix_from_video` prompt.
-Running `framesleuth-mcp`
-directly starts the stdio server (it waits for
-a client and produces no output — Ctrl-C to exit; that silence is success).
+
+Running `framesleuth-mcp` directly starts the stdio server. It waits for a
+client and produces no output; that silence is success. Ctrl-C to exit.
 
 ---
 
 ## 1. VS Code + GitHub Copilot
 
-Top-level key is **`servers`** (VS Code-specific — differs from Claude). This repo
-already ships [`.vscode/mcp.json`](../.vscode/mcp.json) using `${workspaceFolder}`.
+Top-level key is `servers`. That's VS Code-specific; Claude uses `mcpServers`.
+This repo already ships [`.vscode/mcp.json`](../.vscode/mcp.json) using
+`${workspaceFolder}`.
 
-> ⚠️ `${workspaceFolder}` only resolves when this config is **workspace-scoped**
-> and the **framesleuth repo is the open folder**. If you add `framesleuth` at
-> **user/global** scope you'll get `spawn ${workspaceFolder}/... ENOENT` — use an
+> ⚠️ `${workspaceFolder}` only resolves when this config is workspace-scoped
+> and the framesleuth repo is the open folder. Add `framesleuth` at user/global
+> scope and you'll get `spawn ${workspaceFolder}/... ENOENT`. Use an
 > absolute-path config from `framesleuth-mcp --print-config` instead.
 
 ```jsonc
@@ -167,9 +165,9 @@ already ships [`.vscode/mcp.json`](../.vscode/mcp.json) using `${workspaceFolder
 ```
 
 1. `code .` from the repo root.
-2. Open `.vscode/mcp.json` → click the **Start** code lens above `framesleuth`
-   (or **MCP: List Servers** → start `framesleuth`).
-3. Open **Copilot Chat → Agent mode** (tools are invisible in Ask mode).
+2. Open `.vscode/mcp.json` and click the **Start** code lens above `framesleuth`
+   (or MCP: List Servers → start `framesleuth`).
+3. Open Copilot Chat in Agent mode. Tools are invisible in Ask mode.
 
 > Windows: `${workspaceFolder}\\.venv\\Scripts\\framesleuth-mcp.exe`.
 
@@ -179,8 +177,8 @@ already ships [`.vscode/mcp.json`](../.vscode/mcp.json) using `${workspaceFolder
 
 ### Quick add
 
-`-e` env flags and `-s` scope go **before** the `--`; everything after `--` is the
-command Claude Code runs:
+`-e` env flags and `-s` scope go before the `--`. Everything after `--` is the
+command Claude Code runs.
 
 ```bash
 claude mcp add framesleuth \
@@ -202,7 +200,8 @@ claude                    # then ask it to analyze a video (see §4)
 
 ### Checked-in project config (`.mcp.json`)
 
-For a team, commit a `.mcp.json` in the repo root. Top-level key is **`mcpServers`**:
+For a team, commit a `.mcp.json` in the repo root. Top-level key here is
+`mcpServers`:
 
 ```json
 {
@@ -225,13 +224,13 @@ Teammates get an approval prompt on first use.
 
 ## 3. Claude Desktop
 
-Edit the config file (create it if missing), then fully quit and reopen Claude
-Desktop.
+Edit the config file, creating it if it's missing, then fully quit and reopen
+Claude Desktop.
 
-- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
 
-Top-level key is **`mcpServers`**; stdio is the default (no `type` needed):
+Top-level key is `mcpServers`. stdio is the default, so no `type` is needed:
 
 ```json
 {
@@ -248,7 +247,7 @@ Top-level key is **`mcpServers`**; stdio is the default (no `type` needed):
 }
 ```
 
-After restart, the `framesleuth` tools appear under the tools/🔌 menu.
+After the restart, the `framesleuth` tools appear under the tools/🔌 menu.
 
 ---
 
@@ -256,25 +255,25 @@ After restart, the `framesleuth` tools appear under the tools/🔌 menu.
 
 In an agent chat:
 
-> Analyze the video at `~/Desktop/bug.mp4` for this repo — the Save button
-> hangs, find why and fix it, and add a retry.
+> Analyze the video at `~/Desktop/bug.mp4` for this repo. The Save button
+> hangs; find why and fix it, and add a retry.
 
 The agent calls `analyze_video(path, repo_root=<this repo>, intent=…)`, which
-writes `bug-reports/<id>/bundle.json`, then:
+writes `bug-reports/<id>/bundle.json`. Then:
 
 > Read report `<id>`: get its repro steps, error evidence, and fix-prompt, then
 > propose a grounded code change.
 
-Because the agent has your repo open, it turns the bundle's grounded
-`code_candidates` + the evidence-only fix prompt into edits through the client's
-normal review flow.
+The agent has your repo open, so it turns the bundle's grounded
+`code_candidates` and the evidence-only fix prompt into edits through the
+client's normal review flow.
 
-Want a different outcome? Steer it with an **action**:
+Want a different outcome? Steer it with an action:
 
-> Analyze `~/Desktop/bug.mp4` with `action="test"` — write a failing
-> regression test instead of fixing it.
+> Analyze `~/Desktop/bug.mp4` with `action="test"`. Write a failing regression
+> test instead of fixing it.
 
-> …with `action="triage"` — just assess severity and tell me which component
+> …with `action="triage"`: just assess severity and tell me which component
 > owns it.
 
 Or skip the analysis and turn an existing report into an artifact:
@@ -287,46 +286,46 @@ Or skip the analysis and turn an existing report into an artifact:
 ## 5. End-to-end test in VS Code (copy/paste)
 
 A concrete pass you can run top-to-bottom to confirm Copilot can analyze a video
-**and act on it**. Use any screen recording you have — the repo ships no sample clip.
+and act on it. Use any screen recording you have; the repo ships no sample clip.
 
-1. **(Optional) Start the vision model for `full` quality.** Skip to get a
-   `degraded`/`partial` bundle from sidecars only — the flow still works.
+1. Optional: start the vision model for `full` quality. Skip it and you get a
+   `degraded`/`partial` bundle from sidecars only. The flow still works.
    ```bash
    ollama serve &            # or your llama.cpp server on :8080
    ollama pull qwen2.5vl
    ```
-2. **Install + smoke-test the server** (see §0). `which framesleuth-mcp` resolves
+2. Install and smoke-test the server (see §0). `which framesleuth-mcp` resolves
    and the smoke test prints 14 tools.
-3. **Start the server in VS Code.** `code .`, open `.vscode/mcp.json`, click
-   **Start** above `framesleuth` (or **MCP: List Servers → Start**). The code lens
-   should flip to **Running**.
-4. **Analyze + act, in Copilot Chat → Agent mode:**
+3. Start the server in VS Code. `code .`, open `.vscode/mcp.json`, click
+   **Start** above `framesleuth` (or MCP: List Servers → Start). The code lens
+   should flip to Running.
+4. Analyze and act, in Copilot Chat → Agent mode:
    > Use the framesleuth tools. Call `analyze_video` with
    > `path="~/Desktop/bug.mp4"`, `repo_root` set to this workspace, and
    > `intent="find why the Save button hangs and propose a fix"`. Then read the
    > report's summary, repro steps, error evidence, and fix-prompt, and propose a
    > grounded code change.
-5. **Verify the run landed** (any shell):
+5. Verify the run landed (any shell):
    ```bash
    ls bug-reports/*/bundle.json | tail -1            # a fresh bundle exists
    # quality, resolved action, and the next-step menu the agent received:
    python -c "import json,glob,os; b=json.load(open(max(glob.glob('bug-reports/*/bundle.json'),key=os.path.getmtime))); print('quality=',b['analysis_quality']['level'],'action=',b.get('action'),'suggested=',[s['action'] for s in b.get('suggested_actions',[])])"
    ```
 
-**Pass criteria:** the agent invoked `analyze_video`, a new `bundle.json` was
+Pass criteria: the agent invoked `analyze_video`, a new `bundle.json` was
 written with an auto-picked `action` and a non-empty `suggested_actions` menu,
 and it proposed edits referencing real files/lines from the bundle's
-`code_candidates` — gated by the fix-prompt's confidence block (it should refuse
-to fabricate on a `degraded` run). The same chat prompt works verbatim in Claude
-Code / Claude Desktop once the server is connected (§2–§3).
+`code_candidates`. The fix-prompt's confidence block gates those edits: on a
+`degraded` run it should refuse to fabricate. The same prompt works verbatim in
+Claude Code and Claude Desktop once the server is connected (§2–§3).
 
 ---
 
 ## 6. Tune latency & quality (optional)
 
-The analysis pipeline is configured via env vars (set them in the server's `env`
-block in `mcp.json`/`.mcp.json`, or a `.env` next to the repo). Defaults are
-tuned for a single local GPU; the ones worth knowing:
+The pipeline is configured via env vars, set either in the server's `env` block
+in `mcp.json`/`.mcp.json` or in a `.env` next to the repo. Defaults are tuned
+for a single local GPU. The ones worth knowing:
 
 | Var | Default | Effect |
 |---|---|---|
@@ -337,34 +336,35 @@ tuned for a single local GPU; the ones worth knowing:
 | `MAX_RESAMPLE_RETRIES` | `2` | Bounded resample around the failure window on ambiguous runs (`0` disables). |
 | `CLASSIFY_USE_MODEL` | `true` | Break ambiguous-band classification ties with a model call. |
 | `KEYFRAME_DEDUP` | `true` | Drop near-identical frames (held spinners, repeated screens) before the VLM. |
-| `ASR_VAD_FILTER` | `true` | Voice-activity filter so silence isn't decoded — fewer hallucinated transcript lines. |
+| `ASR_VAD_FILTER` | `true` | Voice-activity filter so silence isn't decoded; fewer hallucinated transcript lines. |
 | `OVERLAY_INTERACTIONS` | `true` | Draw a marker on a keyframe where a click/cursor sidecar landed (needs coordinates). |
-| `OCR_BACKSTOP` | `true` | Second OCR read on sparse error frames — needs the optional `ocr` extra + `tesseract`. |
+| `OCR_BACKSTOP` | `true` | Second OCR read on sparse error frames. Needs the optional `ocr` extra plus `tesseract`. |
 | `REDACT_PII` | `true` | Scrub PII (emails, cards, SSNs, phones, cloud keys) on top of secrets. |
 
-See [`.env.example`](../.env.example) for the full list. All are optional —
-the server runs with sensible defaults out of the box.
+See [`.env.example`](../.env.example) for the full list. All are optional; the
+server runs fine on the defaults.
 
 ---
 
 ## 7. Notes & troubleshooting
 
-- **Degraded vs full.** Without the model servers (llama.cpp/Ollama) the pipeline
+- Degraded vs full. Without the model servers (llama.cpp/Ollama) the pipeline
   runs in sidecar/degraded mode: no `keyframes/`, and `analysis_quality.level`
   will be `partial` or `degraded`. Add the models (see
   [runbook.md](../runbook.md)) for real frame OCR/captions and `full` quality.
-- **Shared store.** Reports created via the HTTP backend (`POST /v1/analyze`) and
+- Shared store. Reports created via the HTTP backend (`POST /v1/analyze`) and
   via the `analyze_video` tool land in the same `BUNDLE_DIR`, so either client
   sees both. Keep `BUNDLE_DIR`/`DATABASE_PATH` consistent across clients.
-- **Read-only.** The server never edits files; all changes go through the agent's
+- Read-only over your code. The server never edits files in your workspace; it
+  only writes under `BUNDLE_DIR`. All code changes go through the agent's
   reviewed apply flow.
 
 | Symptom | Fix |
 |---|---|
 | `framesleuth-mcp: command not found` | Activate the venv, `uv sync --frozen --extra dev`, re-check `which framesleuth-mcp`. |
-| Tools don't appear (Copilot) | Use **Agent mode**, and Start + trust the server. |
+| Tools don't appear (Copilot) | Use Agent mode, and Start + trust the server. |
 | Tools don't appear (Claude) | Use an absolute `command` path; restart the client; `claude mcp list` (CLI). |
-| `get_keyframe_image` returns nothing | Keyframes exist only after a **full-mode** analysis. |
+| `get_keyframe_image` returns nothing | Keyframes exist only after a full-mode analysis. |
 | A client can't find a report | Ensure its `BUNDLE_DIR` matches where the analysis wrote. |
 | `analyze_video` errors / empty captions after a model 400 | Your VLM engine rejects `response_format`. Set `VLM_JSON_MODE=false` in the server `env`. |
 | Frame analysis feels slow | Lower `VLM_MAX_TOKENS`, and only raise `VLM_MAX_CONCURRENCY` if the engine serves requests in parallel (§6). |

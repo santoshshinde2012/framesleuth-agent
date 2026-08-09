@@ -1,28 +1,25 @@
 # Integrating Framesleuth into a web application (end-to-end)
 
-This is the **one** guide for embedding Framesleuth in **your own web/client app** so a
-user can upload a bug video, type what they want done, and have an **agent** act on it —
-diagnose the bug, draft a fix, or answer a question — grounded in what the video shows.
+The one guide for embedding Framesleuth in your own web or client app: a user uploads a bug
+video, types what they want done, and an agent acts on it, grounded in what the video shows.
+It covers the reference architecture, the plain HTTP integration (async analyze, poll, report),
+and the agentic loop that hands the result to Claude.
 
-It covers the whole path: the reference architecture, the plain HTTP integration (with
-the **async analyze → poll → report** flow), and the agentic loop that hands the result
-to Claude.
-
-> **Local-first & private.** Framesleuth binds loopback (`127.0.0.1`) — it is **not**
-> meant to be exposed on a network or the public internet. Its CORS allowlist is an
-> explicit set of origins: local dev (`http://localhost:3000`, `http://127.0.0.1:3000`)
-> and `chrome-extension://` IDs you configure, plus anything you add to `WEB_ORIGINS` —
-> which is **empty by default, so no remote site is trusted out of the box**. It answers
-> Chrome's Private Network Access preflight, so a page on an allowed origin running
-> **in your browser, on your machine** can call the loopback API directly.
+> **Local-first and private.** Framesleuth binds loopback (`127.0.0.1`) and is not meant to be
+> exposed on a network or the internet. Its CORS allowlist is an explicit set of origins: local
+> dev (`http://localhost:3000`, `http://127.0.0.1:3000`), the `chrome-extension://` IDs you
+> configure, and anything you add to `WEB_ORIGINS`, which is empty by default, so no remote site
+> is trusted out of the box. It answers Chrome's Private Network Access preflight, so a page on
+> an allowed origin running in your browser, on your machine, can call the loopback API
+> directly.
 >
-> To let the hosted "Try it" widget on framesleuth.com drive your locally-running agent,
-> opt in deliberately: `WEB_ORIGINS=https://framesleuth.com,https://www.framesleuth.com`.
+> To let the hosted "Try it" widget on framesleuth.com drive your locally-running agent, you
+> have to opt in: `WEB_ORIGINS=https://framesleuth.com,https://www.framesleuth.com`.
 > Allowlisting an origin never makes the agent reachable off your machine.
 >
-> For your **own production web app**, prefer the proxy pattern below (browser → your
-> server → Framesleuth) and set `WEB_ORIGINS` to just your origins, so you keep the
-> analysis on a machine you control and add your own auth.
+> For your own production web app, prefer the proxy pattern below (browser → your server →
+> Framesleuth) and set `WEB_ORIGINS` to just your origins. The analysis stays on a machine you
+> control, and you can put your own auth in front of it.
 
 ---
 
@@ -54,16 +51,16 @@ to Claude.
                                                     back to the browser
 ```
 
-The **agentic** part is steps 4–5: instead of just showing the bundle, you hand it to an
-LLM agent that decides what to do with it and takes the next action.
+Steps 4 and 5 are the agentic part. Rather than just showing the bundle, you hand it to an LLM
+agent that decides what to do with it and takes the next action.
 
 ---
 
 ## 2. The plain HTTP integration (no agent yet)
 
-Analysis is **asynchronous**: `POST /v1/analyze` returns `202` with a `job_id` immediately
-and runs the pipeline in the background. **Poll `GET /v1/jobs/{id}`** until `state` is
-`done`, then read `GET /v1/report/{id}`. Your backend forwards the upload and does the poll.
+Analysis is asynchronous. `POST /v1/analyze` returns `202` with a `job_id` immediately and runs
+the pipeline in the background. Poll `GET /v1/jobs/{id}` until `state` is `done`, then read
+`GET /v1/report/{id}`. Your backend forwards the upload and does the poll.
 
 ### Node / Express
 
@@ -119,11 +116,11 @@ const { report } = await (await fetch("/api/report-bug", { method: "POST", body:
 
 That's the whole non-agentic path.
 
-> **Don't want to poll?** Stream `GET /v1/jobs/{id}/events` (Server-Sent Events) to
-> receive JSON progress snapshots until the job is terminal, or set `WEBHOOK_URL` so
-> the backend POSTs a compact `{id, state, source_video, error}` payload (plus `title` and `action` once a bundle exists) to your server on
-> completion. To abort a run, `DELETE /v1/jobs/{id}` (cooperative — it stops at the
-> next stage boundary and the job becomes `cancelled`).
+> Don't want to poll? Stream `GET /v1/jobs/{id}/events` (Server-Sent Events) for JSON progress
+> snapshots until the job is terminal, or set `WEBHOOK_URL` and the backend will POST a compact
+> `{id, state, source_video, error}` payload (plus `title` and `action` once a bundle exists) to
+> your server on completion. To abort a run, `DELETE /v1/jobs/{id}`. Cancellation is
+> cooperative: the job stops at the next stage boundary and ends up in state `cancelled`.
 
 ### Inputs — `POST /v1/analyze` (multipart form)
 
@@ -132,14 +129,14 @@ That's the whole non-agentic path.
 | `video` | ✅ | The recording (`.mp4`/`.webm`/`.mkv`/`.mov`/`.avi`). |
 | `sidecars` | — | JSON array of browser events (console errors, failed requests, clicks, env). Strong bug evidence even with no vision model. |
 | `intent` | — | The user's request, in their words. Recorded and woven into the fix-prompt. |
-| `skill` | — | Summary **style**: `summary` (default) · `bug_report` · `tutorial` · `action_items` · `release_notes`. `GET /v1/skills` lists them. |
+| `skill` | — | Summary style: `summary` (default) · `bug_report` · `tutorial` · `action_items` · `release_notes`. `GET /v1/skills` lists them. |
 | `system_prompt` | — | Fully custom summary prompt; overrides `skill`. |
-| `action` | — | What the agent should **do**: `fix` · `implement` · `design` · `summarize` · `explain` · `triage` · `test` · `report` · `reproduce`. Auto-picked from the classification when omitted. `GET /v1/actions` lists them. |
+| `action` | — | What the agent should do: `fix` · `implement` · `design` · `summarize` · `explain` · `triage` · `test` · `report` · `reproduce`. Auto-picked from the classification when omitted. `GET /v1/actions` lists them. |
 | `action_prompt` | — | Fully custom action task; overrides `action`. |
 | `capture_options` | — | Arbitrary capture metadata, stored beside the bundle for provenance. |
 
-Returns `202 { job_id, status: "queued", idempotent }`. Re-posting identical bytes returns
-the cached job (`idempotent: "true"`) without re-running. Limits: `MAX_UPLOAD_MB`,
+Returns `202 { job_id, status: "queued", idempotent }`. Re-posting the same bytes with the same
+options returns the cached job (`idempotent: true`) without re-running. Limits: `MAX_UPLOAD_MB`,
 `MAX_DURATION_S`.
 
 ### Output — the Context Bundle (`GET /v1/report/{id}`)
@@ -149,30 +146,30 @@ The bundle the consumer reads. Key fields:
 | Field | What it is |
 |---|---|
 | `classification` | `label` (bug/feature/tutorial/demo/feedback/other) + `confidence`. |
-| `title`, `severity`, `suspected_component` | Triage headline. Bug-only — `null` for a general video. |
-| `summary`, `key_moments[]` | Narrative summary + salient timestamped moments — the deliverable for any (non-bug) video. |
+| `title`, `severity`, `suspected_component` | Triage headline. `title` is always set; the other two are bug-only and `null` for a general video. |
+| `summary`, `key_moments[]` | Narrative summary plus salient timestamped moments. This is the deliverable for any non-bug video. |
 | `repro_steps[]` | Numbered, evidence-cited steps (empty when none were shown). |
 | `error_evidence[]` | Timestamped console / OCR / network errors. |
 | `code_candidates[]` | Ranked `file:line` locations from grounding. |
 | `skill` | The summary style/skill used to produce `summary`. |
-| `action`, `suggested_actions[]` | Resolved response mode + a machine-readable next-step menu. |
+| `action`, `suggested_actions[]` | Resolved response mode plus a machine-readable next-step menu. |
 | `keyframe_refs[]`, `user_intent`, `environment` | Frames read, your request, environment. |
-| `stage_timings` | Per-stage wall-clock seconds — surface "where the time went" in your UI. |
-| `analysis_quality` | **Trust signal** — `full`/`partial`/`degraded` + `warnings`. Gate your UI/agent on it so a thin recording isn't shown as "no issues found". |
+| `stage_timings` | Per-stage wall-clock seconds. Surface "where the time went" in your UI. |
+| `analysis_quality` | **Trust signal**: `full`/`partial`/`degraded` + `warnings`. Gate your UI/agent on it so a thin recording isn't shown as "no issues found". |
 
-See **[capabilities.md](capabilities.md)** for the complete input/output reference and
-every supported skill, action, renderer, endpoint, and MCP tool.
+See [capabilities.md](capabilities.md) for the complete input/output reference and every
+supported skill, action, renderer, endpoint, and MCP tool.
 
 ### Also available — HTML → video (optional)
 
-Separate from the analyze loop, the backend can render a self-contained HTML
-animation (CSS/JS/canvas) to a clip **frame-by-frame** — full color, no dropped
-frames, no quality loss (up to 4K, 5–60 fps): `POST /v1/render-html` with
-`{html, format: mp4|gif|webm, duration_s, fps, width, height}` returns the encoded
-file. It's an **optional capability** (needs the `render` extra + `ffmpeg`) and
-returns `503` when unavailable — gate your UI on `GET /v1/healthz` → `render.ready`.
-Proxy it the same way as the rest (browser → your backend → Framesleuth, loopback
-only); binary responses pass straight through.
+Separate from the analyze loop, the backend can render a self-contained HTML animation
+(CSS/JS/canvas) to a clip frame-by-frame: full color, no dropped frames, no quality loss, up to
+4K at 5–60 fps.
+`POST /v1/render-html` with `{html, format: mp4|gif|webm, duration_s, fps, width, height}`
+returns the encoded file. It's optional (needs the `render` extra and `ffmpeg`) and returns
+`503` when unavailable, so gate your UI on `GET /v1/healthz` → `render.ready`. Proxy it like the
+rest (browser → your backend → Framesleuth, loopback only); binary responses pass straight
+through.
 
 ---
 
@@ -182,10 +179,10 @@ Hand the bundle to an LLM agent and let it take the next action. Two patterns.
 
 ### Pattern A — Custom tool + Claude agent loop (recommended for web apps)
 
-Expose Framesleuth to Claude as a **tool**. Claude decides when to analyze the video, reads
-the result, and (with repo-access tools you add) drafts a fix. Your backend runs the loop
-and keeps control of every side effect. This uses the Anthropic SDK — Framesleuth is
-Python, so a Python backend is shown; the shapes are identical in the TypeScript SDK.
+Expose Framesleuth to Claude as a tool. Claude decides when to analyze the video, reads the
+result, and (with repo-access tools you add) drafts a fix. Your backend runs the loop and keeps
+control of every side effect. The example uses the Anthropic SDK; Framesleuth is Python, so a
+Python backend is shown, but the shapes are identical in the TypeScript SDK.
 
 ```python
 # pip install anthropic httpx
@@ -306,17 +303,17 @@ def agent_turn(user_request: str, video_path: str) -> str:
         messages.append({"role": "user", "content": results})
 ```
 
-Wire `agent_turn(...)` to an endpoint your browser calls. The user gets a grounded
-answer/fix; Claude only ever *proposes* — your app decides whether to apply edits (open a
-PR, show a diff for review). Add more tools (`read_file`, `search_repo`,
-`open_pull_request`) to let the agent act on your codebase, gating the side-effecting ones
-behind your own confirmation UI.
+Wire `agent_turn(...)` to an endpoint your browser calls. Claude only ever *proposes*; your app
+decides whether to apply edits (open a PR, show a diff for review). Add more tools (`read_file`,
+`search_repo`, `open_pull_request`) to let the agent act on your codebase, and gate the
+side-effecting ones behind your own confirmation UI.
 
-> **Why a tool, not just pasting the bundle?** The agent calls it only when needed, can
+> Why a tool rather than pasting the bundle in? The agent calls it only when it needs it, can
 > re-analyze with a refined intent, and the same loop scales to many tools (read repo, run
-> tests, open a PR) — the standard agentic shape. `GET /v1/report/{id}` returns the full
-> Context Bundle; build your own prompt from it. Framesleuth's own grounded fix-prompt
-> template is rendered over MCP, via the `framesleuth://report/{id}/fix-prompt` resource.
+> tests, open a PR). To build your own prompt instead, `GET /v1/report/{id}` returns the full
+> Context Bundle. Framesleuth's own grounded fix-prompt template is served by
+> `GET /v1/report/{id}/prompt`; MCP serves the same text as the
+> `framesleuth://report/{id}/fix-prompt` resource.
 
 ### Pattern B — MCP connector (agent already speaks MCP)
 
@@ -324,66 +321,64 @@ If your agent is MCP-native, point it at the `framesleuth` MCP server instead of
 tool. The server exposes `analyze_video` (with `action`/`skill`), `get_report`,
 `get_suggested_actions`, `get_repro_steps`, `locate_in_code`, `render`, the
 `fix-prompt`/`markdown`/`issue` resources, and more. Setup and the full tool list are in
-**[use-with-vscode-and-claude.md](use-with-vscode-and-claude.md)**. For a backend agent,
-launch it over stdio (`framesleuth-mcp`) and drive it with an MCP client; the Anthropic SDK
-can convert MCP tools for the tool runner (`anthropic.lib.tools.mcp`), or Claude's MCP
-connector can call a remote MCP endpoint directly.
+[use-with-vscode-and-claude.md](use-with-vscode-and-claude.md). For a backend agent, launch it
+over stdio (`framesleuth-mcp`) and drive it with an MCP client. The Anthropic SDK can convert
+MCP tools for the tool runner (`anthropic.lib.tools.mcp`), or Claude's MCP connector can call a
+remote endpoint directly.
 
 ---
 
 ## 4. Putting it together — the end-to-end flow
 
-1. **Browser**: user picks a video, types a request, submits to *your* endpoint.
-2. **Your backend**: saves the upload, calls `agent_turn(request, path)`.
-3. **Agent**: calls `analyze_bug_video` → Framesleuth queues, your backend polls until
-   `done` and returns the bundle → Claude reasons over the cited evidence and (with repo
+1. Browser: user picks a video, types a request, submits to *your* endpoint.
+2. Your backend: saves the upload, calls `agent_turn(request, path)`.
+3. Agent: calls `analyze_bug_video`. Framesleuth queues the job, your backend polls until
+   `done` and returns the bundle, and Claude reasons over the cited evidence and (with repo
    tools) drafts the change.
-4. **Your backend**: returns the agent's answer/diff; optionally applies it behind a
-   review/confirm step.
-5. **Browser**: renders the result — the repro steps, the proposed fix, the citations.
+4. Your backend: returns the answer or diff, optionally applying it behind a review step.
+5. Browser: renders the result. Repro steps, proposed fix, citations.
 
-Everything heavy (frame decode, VLM, ASR) runs locally inside Framesleuth; your app only
+Everything heavy (frame decode, VLM, ASR) runs locally inside Framesleuth. Your app only
 orchestrates and renders.
 
 ---
 
 ## 5. Deployment & security checklist
 
-- **Keep Framesleuth on loopback.** It binds `127.0.0.1` and is not meant to be exposed on
-  a network or the internet. The CORS allowlist (`WEB_ORIGINS`) only controls which
-  browser origins may *read* responses from the local API — it does **not** make the agent
+- **Keep Framesleuth on loopback.** It binds `127.0.0.1` and is not meant to be exposed on a
+  network or the internet. The CORS allowlist (`WEB_ORIGINS`) only controls which browser
+  origins may *read* responses from the local API; it does not make the agent
   network-reachable. `WEB_ORIGINS` starts empty, but `http://localhost:3000` and
-  `http://127.0.0.1:3000` are trusted by default so a fresh checkout's `npm run dev`
-  works with no configuration. On a deployment that serves no local dev server, set
-  `ALLOW_LOCAL_DEV_ORIGINS=false` — that is what makes the allowlist genuinely empty.
-  For a production web app, either keep it empty and proxy through your backend, or
-  list your own origins only.
-- **Set `API_TOKEN` on the agent.** When set, every `/v1` endpoint except `/v1/healthz`
-  requires `Authorization: Bearer <token>`. This matters here specifically because CORS
-  can be configured to allow a *public* HTTPS origin, plus Chrome's Private Network
-  Access preflight: CORS governs what a *browser* may read, not what another local process — or
-  a DNS-rebinding page — may send to loopback. A token is the control that does.
-- **Put auth on *your* layer too** (the browser→backend hop), for anything beyond a
-  single-user machine.
-- **Redaction is built in** — Framesleuth strips secrets (passwords, tokens, JWTs) **and
-  PII** (emails, Luhn-valid card numbers, SSNs/phones, cloud keys) from evidence text
-  before it's stored or returned, so the bundle you forward to an LLM is already scrubbed
-  (`REDACT_PII`, on by default). Note redaction is text-only today — a secret visible *in a
-  frame* is not yet pixel-masked, so still treat bundles and keyframes as sensitive.
-- **Webhook target is yours.** If you set `WEBHOOK_URL`, the backend POSTs there on job
-  completion — point it at an endpoint you control; the payload carries no secrets beyond
-  the job title/action.
-- **Gate side effects in the agent.** The analysis is read-only; any tool that writes
-  (apply patch, open PR, run a command) should require your explicit confirmation, not the
-  model's.
-- **Bound the work.** `MAX_UPLOAD_MB`/`MAX_DURATION_S` cap input size; `MAX_CONCURRENT_JOBS`
-  bounds how many analyses run at once (extras queue). Poll `/v1/jobs/{id}` rather than
-  holding a request open.
-- **Models.** Visual understanding needs a local VLM server (e.g. Ollama serving
-  `qwen2.5vl`); without it Framesleuth degrades to sidecar/console evidence. See
-  **[runbook.md](../runbook.md)**.
+  `http://127.0.0.1:3000` are trusted by default so a fresh checkout's `npm run dev` needs no
+  configuration. On a deployment that serves no local dev server, set
+  `ALLOW_LOCAL_DEV_ORIGINS=false`; that is what makes the allowlist genuinely empty. For a
+  production web app, either keep it empty and proxy through your backend, or list only your own
+  origins.
+- **Set `API_TOKEN` on the agent.** When set, every `/v1` endpoint except `/v1/healthz` requires
+  `Authorization: Bearer <token>`. It matters here because CORS can be configured to allow a
+  public HTTPS origin and because Chrome's Private Network Access preflight is answered. CORS
+  governs what a *browser* may read, not what another local process, or a DNS-rebinding page,
+  may send to loopback. A token is the control that does.
+- Put auth on *your* layer too (the browser→backend hop) for anything beyond a single-user
+  machine.
+- Redaction is built in. Framesleuth strips secrets (passwords, tokens, JWTs) and PII (emails,
+  Luhn-valid card numbers, SSNs/phones, cloud keys) from evidence text before it's stored or
+  returned, so the bundle you forward to an LLM is already scrubbed (`REDACT_PII`, on by
+  default). It's text-only today: a secret visible *in a frame* is not yet pixel-masked, so keep
+  treating bundles and keyframes as sensitive.
+- The webhook target is yours. If you set `WEBHOOK_URL`, the backend POSTs there on job
+  completion, so point it at an endpoint you control. The payload carries no secrets beyond the
+  job title and action.
+- Gate side effects in the agent. The analysis is read-only. Any tool that writes (apply patch,
+  open PR, run a command) should require your explicit confirmation, not the model's.
+- Bound the work. `MAX_UPLOAD_MB`/`MAX_DURATION_S` cap input size; `MAX_CONCURRENT_JOBS` bounds
+  how many analyses run at once (extras queue). Poll `/v1/jobs/{id}` rather than holding a
+  request open.
+- Models. Visual understanding needs a local VLM server, for example Ollama serving
+  `qwen2.5vl`. Without it Framesleuth degrades to sidecar/console evidence. See
+  [runbook.md](../runbook.md).
 
-See also: **[capabilities.md](capabilities.md)** (every input, output, skill, action,
-renderer, endpoint, and MCP tool), **[use-with-vscode-and-claude.md](use-with-vscode-and-claude.md)**
-(MCP client setup), **[postman/README.md](../postman/README.md)** (exercise the HTTP API),
-and **[runbook.md](../runbook.md)** (setup & troubleshooting).
+See also: [capabilities.md](capabilities.md) (every input, output, skill, action, renderer,
+endpoint, and MCP tool), [use-with-vscode-and-claude.md](use-with-vscode-and-claude.md) (MCP
+client setup), [postman/README.md](../postman/README.md) (exercise the HTTP API), and
+[runbook.md](../runbook.md) (setup & troubleshooting).
